@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate release source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact tag
+        uses: actions/checkout@v6
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+      - name: Set up Node.js without release cache
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          package-manager-cache: false
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.5"
+          cache: false
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Match tag, package, repository, and changelog
+        run: node scripts/verify-release-version.mjs "${GITHUB_REF_NAME}"
+      - name: Run complete TypeScript gate
+        run: pnpm check
+      - name: Validate generated native runtimes
+        run: pnpm test:runtimes
+      - name: Validate generated framework adapters
+        run: pnpm test:frameworks
+
+  build:
+    name: Build, verify, and attest exact artifact
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out exact tag
+        uses: actions/checkout@v6
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+      - name: Set up Node.js without release cache
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Resolve release version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build once
+        run: pnpm build
+      - name: Pack without rebuilding
+        run: |
+          mkdir release
+          npm pack --ignore-scripts --pack-destination release
+      - name: Validate and install the exact tarball
+        run: node scripts/validate-package.mjs "release/aiyoke-${GITHUB_REF_NAME#v}.tgz"
+      - name: Create SHA-256 checksum
+        run: node scripts/release-checksum.mjs create "release/aiyoke-${GITHUB_REF_NAME#v}.tgz"
+      - name: Generate SPDX JSON SBOM for the tarball
+        uses: anchore/sbom-action@v0
+        with:
+          file: release/aiyoke-${{ steps.version.outputs.version }}.tgz
+          format: spdx-json
+          output-file: release/aiyoke-${{ steps.version.outputs.version }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: release/aiyoke-${{ steps.version.outputs.version }}.tgz
+      - name: Attest SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: release/aiyoke-${{ steps.version.outputs.version }}.tgz
+          sbom-path: release/aiyoke-${{ steps.version.outputs.version }}.spdx.json
+      - name: Upload immutable release bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-release-${{ github.ref_name }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish approved release
+    needs: build
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out exact tag
+        uses: actions/checkout@v6
+      - name: Set up Node.js for npm trusted publishing
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Download exact attested release bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: npm-release-${{ github.ref_name }}
+          path: release
+      - name: Verify artifact checksum
+        run: node scripts/release-checksum.mjs verify "release/aiyoke-${GITHUB_REF_NAME#v}.tgz.sha256"
+      - name: Publish exact tarball with npm OIDC provenance
+        run: npm publish "release/aiyoke-${GITHUB_REF_NAME#v}.tgz" --access public
+      - name: Verify registry version
+        run: test "$(npm view "aiyoke@${GITHUB_REF_NAME#v}" version)" = "${GITHUB_REF_NAME#v}"
+      - name: Create GitHub release with checksums and SBOM
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}" release/*
+          --verify-tag --generate-notes --title "Aiyoke ${GITHUB_REF_NAME#v}"

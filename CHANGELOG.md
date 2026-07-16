@@ -57,6 +57,11 @@ All notable changes to this project are documented here. The project follows
 - Canonical workspace roots and fail-closed atomic-write parent binding, with a
   deterministic adversarial harness for symlink substitution before staging and
   before rename.
+- Cross-platform Node 22/24 CI with separate static, coverage, package, security,
+  dependency-review, native-runtime, and framework-runtime gates.
+- Exact npm tarball content/install/import/CLI validation and a protected OIDC
+  release workflow with checksums, SPDX SBOM, GitHub attestations, npm provenance,
+  immutable release assets, and documented deprecation/rollback operations.
 
 ## 0.1.0 — 2026-07-16
 

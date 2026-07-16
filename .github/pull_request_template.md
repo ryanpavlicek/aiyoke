@@ -4,7 +4,7 @@
 
 ## Contract and architecture checklist
 
-- [ ] I read `AGENTS.md` and the relevant architecture/extension docs.
+- [ ] I read the relevant architecture and extension contract documentation.
 - [ ] The change preserves the canonical-source and deterministic-output rules.
 - [ ] New capabilities are registered through `ExtensionRegistry` rather than a
       core target/framework switch.
