@@ -33,6 +33,7 @@ public package built from this public repository.
    ```sh
    pnpm install --frozen-lockfile
    pnpm check
+   pnpm test:target-clients
    pnpm test:runtimes
    pnpm test:frameworks
    pnpm test:package

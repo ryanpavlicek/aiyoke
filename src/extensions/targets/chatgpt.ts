@@ -1,9 +1,4 @@
-import type {
-  ArtifactIntent,
-  JsonObject,
-  JsonValue,
-  VerificationFinding
-} from "../../core/index.js";
+import type { ArtifactIntent, JsonObject, VerificationFinding } from "../../core/index.js";
 import { compareCodePoints } from "../../core/index.js";
 import type {
   TargetExtension,
@@ -44,44 +39,59 @@ async function render(context: TargetRenderContext): Promise<readonly ArtifactIn
     "description",
     `${context.spec.project.name} project assistant`
   );
-  const skillEntries = uniqueSkills(context.modules).map(({ module, name: skillName }) => {
-    const skill = module.skills.find((candidate) => candidate.name === skillName);
-    return {
-      name: skillName,
-      description: skill?.description ?? ""
-    };
-  });
   const pluginRoot = ".aiyoke/generated/plugins/aiyoke-project";
-  // The marketplace is intentionally checked in under .agents so it can be reviewed and
-  // consumed by both ChatGPT and Codex tooling. The plugin root is generated and versionable.
+  const hooks = renderHooks(context.modules);
+  const hasHooks =
+    hooks.hooks !== null &&
+    typeof hooks.hooks === "object" &&
+    !Array.isArray(hooks.hooks) &&
+    Object.keys(hooks.hooks).length > 0;
+  const mcp = renderMcpServers(context.modules);
+  const hasMcp =
+    mcp.mcpServers !== undefined &&
+    typeof mcp.mcpServers === "object" &&
+    mcp.mcpServers !== null &&
+    Object.keys(mcp.mcpServers).length > 0;
   const plugin = {
-    schemaVersion: 1,
-    id: ADAPTER,
-    name,
+    name: "aiyoke-project",
     version,
     description,
-    instructions: "AGENTS.md",
-    skills: skillEntries.map((entry) => ({ ...entry, path: `skills/${entry.name}/SKILL.md` })),
-    capabilities: ["instructions", "skills", "hooks", "mcp"],
-    settings: targetSettings
-  } as unknown as JsonValue;
+    skills: "./skills/",
+    ...(hasHooks ? { hooks: "./hooks/hooks.json" } : {}),
+    ...(hasMcp ? { mcpServers: "./.mcp.json" } : {}),
+    interface: {
+      displayName: name,
+      shortDescription: description,
+      longDescription: description,
+      developerName: "Aiyoke",
+      category: "Developer Tools"
+    }
+  };
   const marketplace = {
-    schemaVersion: 1,
+    name: "aiyoke-projects",
+    interface: { displayName: "Aiyoke project plugins" },
     plugins: [
       {
-        id: ADAPTER,
-        name,
-        version,
-        description,
-        path: pluginRoot
+        name: "aiyoke-project",
+        source: { source: "local", path: `./${pluginRoot}` },
+        policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+        category: "Developer Tools"
       }
     ]
-  } as unknown as JsonValue;
+  };
   const intents: ArtifactIntent[] = [
     artifact(`${pluginRoot}/.codex-plugin/plugin.json`, stableJson(plugin), ADAPTER),
     artifact(
-      `${pluginRoot}/AGENTS.md`,
-      renderInstructions(context.modules, "Project instructions"),
+      `${pluginRoot}/skills/project-guidance/SKILL.md`,
+      [
+        "---",
+        "name: project-guidance",
+        "description: Apply the generated project architecture and engineering guidance.",
+        "---",
+        "",
+        renderInstructions(context.modules, "Project instructions").trimEnd(),
+        ""
+      ].join("\n"),
       ADAPTER
     ),
     artifact(".agents/plugins/marketplace.json", stableJson(marketplace), ADAPTER)
@@ -95,17 +105,10 @@ async function render(context: TargetRenderContext): Promise<readonly ArtifactIn
       )
     );
   }
-  const hooks = renderHooks(context.modules);
-  if (Array.isArray(hooks.hooks) && hooks.hooks.length > 0) {
+  if (hasHooks) {
     intents.push(artifact(`${pluginRoot}/hooks/hooks.json`, stableJson(hooks), ADAPTER));
   }
-  const mcp = renderMcpServers(context.modules);
-  if (
-    mcp.mcpServers !== undefined &&
-    typeof mcp.mcpServers === "object" &&
-    mcp.mcpServers !== null &&
-    Object.keys(mcp.mcpServers).length > 0
-  ) {
+  if (hasMcp) {
     intents.push(artifact(`${pluginRoot}/.mcp.json`, stableJson(mcp), ADAPTER));
   }
   return intents.sort((a, b) => compareCodePoints(a.path, b.path));

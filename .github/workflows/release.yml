@@ -49,6 +49,8 @@ jobs:
         run: pnpm test:runtimes
       - name: Validate generated framework adapters
         run: pnpm test:frameworks
+      - name: Validate pinned target clients and artifact contracts
+        run: pnpm test:target-clients
 
   build:
     name: Build, verify, and attest exact artifact

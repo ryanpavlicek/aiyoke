@@ -67,6 +67,62 @@ describe("target renderers", () => {
       "@AGENTS.md"
     );
     expect(first.some((artifact) => artifact.path === ".claude/skills/review/SKILL.md")).toBe(true);
+    expect(
+      first.find((artifact) => artifact.path === ".claude/skills/review/SKILL.md")?.content
+    ).toContain("allowed-tools: Read");
+  });
+
+  it("translates Claude hooks, MCP servers, and read-only subagents to native contracts", async () => {
+    const target = {
+      kind: "coding-agent",
+      adapter: extensionId("claude-code"),
+      features: ["hooks", "mcp", "subagents"],
+      settings: {}
+    } as const;
+    const module: HarnessModule = {
+      ...moduleFixture,
+      hooks: [{ id: "safety", event: "pre-tool", matcher: "Bash", command: "bin/check" }],
+      mcpServers: [
+        {
+          name: "remote",
+          transport: {
+            kind: "http",
+            url: "https://mcp.example.com",
+            bearerTokenEnvironmentVariable: "MCP_TOKEN"
+          }
+        }
+      ],
+      subagents: [
+        {
+          name: "reviewer",
+          description: "Review safely",
+          prompt: "Review the change.",
+          tools: ["read", "search"],
+          readOnly: true
+        }
+      ]
+    };
+    const artifacts = await claudeCodeTarget.render({ ...context(target), modules: [module] });
+    const settings = JSON.parse(
+      artifacts.find((artifact) => artifact.path === ".claude/settings.json")?.content ?? "{}"
+    );
+    expect(settings.hooks.PreToolUse).toEqual([
+      { matcher: "Bash", hooks: [{ type: "command", command: "bin/check" }] }
+    ]);
+    const mcp = JSON.parse(
+      artifacts.find((artifact) => artifact.path === ".mcp.json")?.content ?? "{}"
+    );
+    expect(mcp.mcpServers.remote).toEqual({
+      type: "http",
+      url: "https://mcp.example.com",
+      headers: { Authorization: "Bearer $" + "{MCP_TOKEN}" }
+    });
+    const agent = artifacts.find(
+      (artifact) => artifact.path === ".claude/agents/reviewer.md"
+    )?.content;
+    expect(agent).toContain("tools: Glob, Grep, Read");
+    expect(agent).toContain("permissionMode: plan");
+    expect(agent).not.toContain("read-only:");
   });
 
   it("keeps the minimal Claude artifact set golden", async () => {
@@ -112,6 +168,29 @@ describe("target renderers", () => {
       artifact.path.endsWith(".codex-plugin/plugin.json")
     );
     expect(manifest?.content).toContain('"version": "2.0.0"');
+    expect(manifest?.content).toContain('"skills": "./skills/"');
+    expect(manifest?.content).not.toContain('"schemaVersion"');
+    expect(artifacts.map((artifact) => artifact.path)).toContain(
+      ".aiyoke/generated/plugins/aiyoke-project/skills/project-guidance/SKILL.md"
+    );
+    const marketplace = JSON.parse(
+      artifacts.find((artifact) => artifact.path === ".agents/plugins/marketplace.json")?.content ??
+        "{}"
+    );
+    expect(marketplace).toMatchObject({
+      name: "aiyoke-projects",
+      plugins: [
+        {
+          name: "aiyoke-project",
+          source: {
+            source: "local",
+            path: "./.aiyoke/generated/plugins/aiyoke-project"
+          },
+          policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+          category: "Developer Tools"
+        }
+      ]
+    });
   });
 
   it("does not duplicate Grok skills when Claude is selected", async () => {

@@ -2,6 +2,7 @@ import type {
   ArtifactIntent,
   ArtifactOwnership,
   HarnessModule,
+  HookDefinition,
   JsonObject,
   JsonValue,
   ManagedSectionMarkers
@@ -132,12 +133,25 @@ export function renderSkill(module: HarnessModule, skillName: string): string {
     `name: ${skill.name}`,
     `description: ${skill.description}`,
     `user-invocable: ${skill.userInvocable ? "true" : "false"}`,
-    `allowed-tools: ${stableStrings(skill.allowedTools).join(", ")}`,
+    `allowed-tools: ${nativeToolNames(skill.allowedTools).join(", ")}`,
     `---`,
     "",
     skill.body.trimEnd()
   ];
   return `${lines.join("\n")}\n`;
+}
+
+const TOOL_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  read: ["Read"],
+  search: ["Grep", "Glob"],
+  test: ["Bash"],
+  shell: ["Bash"],
+  write: ["Edit", "Write"]
+};
+
+/** Translate portable module capabilities into tool names shared by coding clients. */
+export function nativeToolNames(tools: readonly string[]): readonly string[] {
+  return stableStrings(tools.flatMap((tool) => TOOL_ALIASES[tool.toLowerCase()] ?? [tool]));
 }
 
 export function uniqueSkills(
@@ -156,19 +170,26 @@ export function uniqueSkills(
 }
 
 export function renderHooks(modules: readonly HarnessModule[]): JsonObject {
-  const hooks: JsonValue[] = [];
+  const eventNames: Readonly<Record<HookDefinition["event"], string>> = {
+    "session-start": "SessionStart",
+    "pre-tool": "PreToolUse",
+    "post-tool": "PostToolUse",
+    stop: "Stop"
+  };
+  const hooks: Record<string, JsonValue[]> = {};
   const seen = new Set<string>();
   for (const hook of modules
     .flatMap((module) => module.hooks)
     .sort((a, b) => compareCodePoints(a.id, b.id))) {
     if (seen.has(hook.id)) continue;
     seen.add(hook.id);
-    hooks.push({
-      id: hook.id,
-      event: hook.event,
-      ...(hook.matcher === undefined ? {} : { matcher: hook.matcher }),
-      command: hook.command
+    const event = eventNames[hook.event];
+    const entries = hooks[event] ?? [];
+    entries.push({
+      ...(hook.matcher === undefined || hook.event === "stop" ? {} : { matcher: hook.matcher }),
+      hooks: [{ type: "command", command: hook.command }]
     });
+    hooks[event] = entries;
   }
   return { hooks } as unknown as JsonObject;
 }
@@ -181,12 +202,17 @@ export function renderMcpServers(modules: readonly HarnessModule[]): JsonObject 
     if (servers[server.name] !== undefined) continue;
     servers[server.name] =
       server.transport.kind === "stdio"
-        ? { command: server.transport.command, args: [...server.transport.args] }
+        ? { type: "stdio", command: server.transport.command, args: [...server.transport.args] }
         : {
+            type: "http",
             url: server.transport.url,
             ...(server.transport.bearerTokenEnvironmentVariable === undefined
               ? {}
-              : { bearerTokenEnv: server.transport.bearerTokenEnvironmentVariable })
+              : {
+                  headers: {
+                    Authorization: `Bearer \${${server.transport.bearerTokenEnvironmentVariable}}`
+                  }
+                })
           };
   }
   return { mcpServers: servers } as unknown as JsonObject;

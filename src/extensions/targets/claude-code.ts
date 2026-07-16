@@ -11,6 +11,7 @@ import type {
 } from "../../extension-sdk/index.js";
 import {
   artifact,
+  nativeToolNames,
   renderHooks,
   renderInstructions,
   renderMcpServers,
@@ -66,8 +67,8 @@ async function render(context: TargetRenderContext): Promise<readonly ArtifactIn
       `---`,
       `name: ${subagent.name}`,
       `description: ${subagent.description}`,
-      `tools: ${subagent.tools.join(", ")}`,
-      `read-only: ${subagent.readOnly ? "true" : "false"}`,
+      `tools: ${nativeToolNames(subagent.tools).join(", ")}`,
+      ...(subagent.readOnly ? ["permissionMode: plan"] : []),
       `---`,
       "",
       subagent.prompt.trimEnd(),
@@ -80,7 +81,12 @@ async function render(context: TargetRenderContext): Promise<readonly ArtifactIn
   const targetSettings = settings(context);
   const claudeSettings = {
     ...targetSettings,
-    ...(Array.isArray(hooks.hooks) && hooks.hooks.length > 0 ? hooks : {})
+    ...(hooks.hooks !== null &&
+    typeof hooks.hooks === "object" &&
+    !Array.isArray(hooks.hooks) &&
+    Object.keys(hooks.hooks).length > 0
+      ? hooks
+      : {})
   } as JsonObject;
   if (Object.keys(claudeSettings).length > 0) {
     intents.push(artifact(".claude/settings.json", stableJson(claudeSettings), ADAPTER));

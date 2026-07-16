@@ -60,6 +60,8 @@
     "test:coverage": "vitest run --coverage",
     "test:runtimes": "pnpm build && node scripts/validate-runtime-fixtures.mjs",
     "test:frameworks": "pnpm build && node scripts/validate-framework-runtime-fixtures.mjs",
+    "test:targets": "pnpm build && node scripts/validate-target-client-fixtures.mjs",
+    "test:target-clients": "pnpm build && node scripts/validate-target-client-fixtures.mjs --native",
     "test:isolation-dist": "node scripts/validate-built-extension-isolation.mjs",
     "test:docs": "node scripts/validate-docs.mjs",
     "test:package": "pnpm build && node scripts/validate-package.mjs",

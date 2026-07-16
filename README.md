@@ -306,6 +306,8 @@ More diagnoses and recovery steps are in [Troubleshooting](docs/troubleshooting.
 ```sh
 pnpm install --frozen-lockfile
 pnpm check
+pnpm test:targets
+pnpm test:target-clients
 pnpm test:runtimes
 pnpm test:frameworks
 pnpm test:package
@@ -313,8 +315,9 @@ pnpm test:package
 
 CI separately enforces formatting/types/architecture, Node 22 and 24 on Linux,
 Windows, and macOS, coverage, package contents/npm install/CLI smoke, production
-dependency audit, dependency review, generated native runtimes, and framework
-adapters. Tagged releases build and attest one exact tarball; see [Release
+dependency audit, dependency review, generated native runtimes, framework
+adapters, strict target contracts, and pinned Claude/Codex/Grok client probes.
+Tagged releases build and attest one exact tarball; see [Release
 operations](docs/releasing.md).
 
 Contributions must preserve deterministic output and downward dependencies, add

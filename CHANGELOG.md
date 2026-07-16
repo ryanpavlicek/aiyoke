@@ -65,6 +65,10 @@ All notable changes to this project are documented here. The project follows
 - Public product documentation with installation and five-minute setup, complete
   CLI/public-API references, concepts, extension security, troubleshooting,
   migration/recovery, release operations, and explicit hosted-service boundaries.
+- Strict target artifact contracts plus exact Claude Code and Codex CLI probes and
+  SHA-256-pinned Grok Build inspection. ChatGPT manifests, marketplaces, hooks,
+  MCP endpoints, portable tool aliases, and read-only Claude subagents now render
+  directly into their documented native client shapes.
 
 ## 0.1.0 — 2026-07-16
 

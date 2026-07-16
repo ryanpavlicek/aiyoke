@@ -29,6 +29,15 @@ artifacts, and participate in drift verification.
 Framework detection requires dependency or distinctive marker evidence. A generic
 manifest alone does not select a framework.
 
+Target artifacts are checked against a strict repository-owned contract on every
+platform. CI additionally runs exact Claude Code and Codex npm CLI versions and an
+exact Grok Build binary whose Linux and Windows SHA-256 values are pinned before execution. Grok's
+machine-readable `inspect` command must discover the generated instructions and
+skills; Claude must parse the generated project MCP entry; and Codex must discover
+the generated ChatGPT marketplace. The pins live in
+`scripts/target-client-versions.json` so compatibility changes are reviewed as
+source changes rather than silently following `latest`.
+
 When runtime generation is enabled, the selected stack also resolves one
 registered application-runtime template for each language. Current generated
 source uses only that language's standard library and includes registry-driven
