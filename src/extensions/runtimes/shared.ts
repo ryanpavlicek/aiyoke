@@ -20,8 +20,15 @@ export interface RuntimeTemplateDefinition {
   readonly source: string;
   readonly testFileName: string;
   readonly testSource: string;
+  readonly modules?: readonly RuntimeModuleDefinition[];
   readonly integrations?: readonly FrameworkIntegrationDefinition[];
   readonly providers?: readonly ProviderIntegrationDefinition[];
+}
+
+export interface RuntimeModuleDefinition {
+  readonly id: string;
+  readonly description: string;
+  readonly artifacts: readonly IntegrationArtifactDefinition[];
 }
 
 export interface FrameworkIntegrationDefinition {
@@ -42,10 +49,17 @@ export interface IntegrationArtifactDefinition {
 
 function readme(
   definition: RuntimeTemplateDefinition,
+  modules: readonly RuntimeModuleDefinition[],
   integrations: readonly FrameworkIntegrationDefinition[],
   providers: readonly ProviderIntegrationDefinition[],
   selectedTargets: ReadonlySet<string>
 ): string {
+  const moduleGuidance =
+    modules.length === 0
+      ? "No higher-level runtime modules were registered."
+      : `Registered higher-level modules: ${modules
+          .map((module) => `\`${module.id}\``)
+          .join(", ")}. These modules depend downward on the stable runtime facade.`;
   const integrationGuidance =
     integrations.length === 0
       ? "No framework integration was selected for this scope."
@@ -83,6 +97,8 @@ timeout, malformed-output, cancellation, and concurrency cases.
 ${integrationGuidance}
 
 ${providerGuidance}
+
+${moduleGuidance}
 
 Do not place credentials in this directory. Supply a secret resolver backed by
 the environment or the consuming application's secret manager at runtime.
@@ -132,6 +148,7 @@ export function createRuntimeTemplate(
         executable: false
       });
       const selectedFrameworks = new Set(scope.stack.frameworks);
+      const modules = definition.modules ?? [];
       const integrations = (definition.integrations ?? []).filter((integration) =>
         selectedFrameworks.has(extensionId(integration.framework))
       );
@@ -143,7 +160,15 @@ export function createRuntimeTemplate(
         artifact(definition.fileName, definition.source),
         artifact(definition.testFileName, definition.testSource),
         artifact("policy.json", policyJson(resolveRuntimePolicy(runtime.profile))),
-        artifact("README.md", readme(definition, integrations, providers, selectedTargets)),
+        artifact(
+          "README.md",
+          readme(definition, modules, integrations, providers, selectedTargets)
+        ),
+        ...modules.flatMap((module) =>
+          module.artifacts.map((moduleArtifact) =>
+            artifact(moduleArtifact.path, moduleArtifact.source)
+          )
+        ),
         ...integrations.map((integration) => artifact(integration.path, integration.source)),
         ...providers.flatMap((provider) =>
           provider.artifacts.map((providerArtifact) =>

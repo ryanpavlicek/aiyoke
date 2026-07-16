@@ -1,4 +1,5 @@
 import { goIntegrations } from "./integrations/go.js";
+import { goRuntimeModules } from "./modules/go.js";
 import { goProviders } from "./providers/go.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
@@ -939,6 +940,7 @@ export const goRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "runtime_test.go",
   testSource: TEST_SOURCE,
+  modules: goRuntimeModules,
   integrations: goIntegrations,
   providers: goProviders
 });

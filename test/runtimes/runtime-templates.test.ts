@@ -75,6 +75,38 @@ const providerArtifacts = new Map([
   ["typescript", ["providers/responses.ts", "providers/responses.test.ts"]]
 ]);
 
+const runtimeModuleArtifacts = new Map([
+  ["go", ["tooling.go", "tooling_test.go", "evaluation.go", "evaluation_test.go"]],
+  [
+    "javascript",
+    [
+      "modules/tooling.js",
+      "modules/tooling.test.js",
+      "modules/evaluation.js",
+      "modules/evaluation.test.js"
+    ]
+  ],
+  [
+    "python",
+    [
+      "modules/__init__.py",
+      "modules/tooling.py",
+      "modules/test_tooling.py",
+      "modules/evaluation.py",
+      "modules/test_evaluation.py"
+    ]
+  ],
+  [
+    "typescript",
+    [
+      "modules/tooling.ts",
+      "modules/tooling.test.ts",
+      "modules/evaluation.ts",
+      "modules/evaluation.test.ts"
+    ]
+  ]
+]);
+
 const workspace = {
   root: "/workspace",
   files: [] as readonly string[],
@@ -137,7 +169,10 @@ describe("runtime template extensions", () => {
         `aiyoke-runtime/${language}/${expectedFile}`,
         `aiyoke-runtime/${language}/${expectedTestFile}`,
         `aiyoke-runtime/${language}/policy.json`,
-        `aiyoke-runtime/${language}/README.md`
+        `aiyoke-runtime/${language}/README.md`,
+        ...(runtimeModuleArtifacts.get(language) ?? []).map(
+          (path) => `aiyoke-runtime/${language}/${path}`
+        )
       ]);
       expect(artifacts.every((artifact) => artifact.ownership === "generated")).toBe(true);
       const policy = artifacts.find((artifact) => artifact.path.endsWith("policy.json"));
@@ -192,10 +227,14 @@ describe("runtime template extensions", () => {
         runtime: spec.runtime,
         scope: { kind: "project", stack: spec.composition.stack }
       });
-      expect(artifacts.slice(4).map((artifact) => artifact.path)).toEqual(
+      const integrationPaths = new Set(
         integrations.map(([, path]) => `aiyoke-runtime/${language}/${path}`)
       );
-      for (const artifact of artifacts.slice(4)) {
+      const renderedIntegrations = artifacts.filter((artifact) =>
+        integrationPaths.has(artifact.path)
+      );
+      expect(renderedIntegrations.map((artifact) => artifact.path)).toEqual([...integrationPaths]);
+      for (const artifact of renderedIntegrations) {
         expect(artifact.content).not.toMatch(/\bTODO\b/i);
         expect(artifact.content).toMatch(/HarnessRuntime|runtime\.execute|runtime\.Execute/);
       }
@@ -283,6 +322,20 @@ describe("runtime template extensions", () => {
       }).outputText;
       expect(javaScript[artifactIndex]?.content).toBe(transpiled);
     }
+    for (const [typeScriptPath, javaScriptPath] of [
+      ["modules/tooling.ts", "modules/tooling.js"],
+      ["modules/tooling.test.ts", "modules/tooling.test.js"],
+      ["modules/evaluation.ts", "modules/evaluation.js"],
+      ["modules/evaluation.test.ts", "modules/evaluation.test.js"]
+    ] as const) {
+      const typed = typeScript.find((artifact) => artifact.path.endsWith(typeScriptPath));
+      const plain = javaScript.find((artifact) => artifact.path.endsWith(javaScriptPath));
+      expect(
+        ts.transpileModule(typed?.content ?? "", {
+          compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext }
+        }).outputText
+      ).toBe(plain?.content);
+    }
   });
 
   it("renders only provider artifacts registered for selected targets", async () => {
@@ -313,19 +366,22 @@ describe("runtime template extensions", () => {
         runtime: spec.runtime,
         scope: { kind: "project", stack: spec.composition.stack }
       });
-      expect(artifacts.slice(4).map((artifact) => artifact.path)).toEqual(
+      const expectedProviderPaths = new Set(
         (providerArtifacts.get(language) ?? []).map((path) => `aiyoke-runtime/${language}/${path}`)
       );
-      for (const artifact of artifacts.slice(4)) {
+      const renderedProviders = artifacts.filter((artifact) =>
+        expectedProviderPaths.has(artifact.path)
+      );
+      expect(renderedProviders.map((artifact) => artifact.path)).toEqual([
+        ...expectedProviderPaths
+      ]);
+      for (const artifact of renderedProviders) {
         expect(artifact.content).not.toMatch(/process\.env|Deno\.env|\.env\b/);
       }
-      if (artifacts.length > 4) {
-        expect(
-          artifacts
-            .slice(4)
-            .map((artifact) => artifact.content)
-            .join("\n")
-        ).toMatch(/SecretResolver|resolveSecret/);
+      if (renderedProviders.length > 0) {
+        expect(renderedProviders.map((artifact) => artifact.content).join("\n")).toMatch(
+          /SecretResolver|resolveSecret/
+        );
       }
     }
   });

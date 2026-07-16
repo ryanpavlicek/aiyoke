@@ -1,4 +1,5 @@
 import { typeScriptIntegrations } from "./integrations/typescript.js";
+import { typeScriptRuntimeModules } from "./modules/typescript.js";
 import { typeScriptProviders } from "./providers/typescript.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
@@ -849,6 +850,7 @@ export const typescriptRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "runtime.test.ts",
   testSource: TEST_SOURCE,
+  modules: typeScriptRuntimeModules,
   integrations: typeScriptIntegrations,
   providers: typeScriptProviders
 });

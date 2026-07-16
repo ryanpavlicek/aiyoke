@@ -41,8 +41,15 @@ try {
   const rustDirectory = join(root, "aiyoke-runtime", "rust");
 
   run(process.execPath, ["--check", join(javaScriptDirectory, "runtime.js")]);
+  run(process.execPath, ["--check", join(javaScriptDirectory, "modules", "tooling.js")]);
+  run(process.execPath, ["--check", join(javaScriptDirectory, "modules", "evaluation.js")]);
   run(process.execPath, ["--check", join(javaScriptDirectory, "providers", "responses.js")]);
   run(process.execPath, ["--test", join(javaScriptDirectory, "runtime.test.js")]);
+  run(process.execPath, [
+    "--test",
+    join(javaScriptDirectory, "modules", "tooling.test.js"),
+    join(javaScriptDirectory, "modules", "evaluation.test.js")
+  ]);
   run(process.execPath, ["--test", join(javaScriptDirectory, "providers", "responses.test.js")]);
   run(process.execPath, [
     resolve("node_modules", "typescript", "bin", "tsc"),
@@ -61,6 +68,10 @@ try {
     "--skipLibCheck",
     join(typeScriptDirectory, "runtime.ts"),
     join(typeScriptDirectory, "runtime.test.ts"),
+    join(typeScriptDirectory, "modules", "tooling.ts"),
+    join(typeScriptDirectory, "modules", "tooling.test.ts"),
+    join(typeScriptDirectory, "modules", "evaluation.ts"),
+    join(typeScriptDirectory, "modules", "evaluation.test.ts"),
     join(typeScriptDirectory, "providers", "responses.ts"),
     join(typeScriptDirectory, "providers", "responses.test.ts")
   ]);
@@ -68,6 +79,8 @@ try {
     resolve("node_modules", "tsx", "dist", "cli.mjs"),
     "--test",
     join(typeScriptDirectory, "runtime.test.ts"),
+    join(typeScriptDirectory, "modules", "tooling.test.ts"),
+    join(typeScriptDirectory, "modules", "evaluation.test.ts"),
     join(typeScriptDirectory, "providers", "responses.test.ts")
   ]);
   const python = process.platform === "win32" ? "python" : "python3";
@@ -76,15 +89,25 @@ try {
     "py_compile",
     join(pythonDirectory, "runtime.py"),
     join(pythonDirectory, "test_runtime.py"),
+    join(pythonDirectory, "modules", "tooling.py"),
+    join(pythonDirectory, "modules", "test_tooling.py"),
+    join(pythonDirectory, "modules", "evaluation.py"),
+    join(pythonDirectory, "modules", "test_evaluation.py"),
     join(pythonDirectory, "providers", "responses.py"),
     join(pythonDirectory, "providers", "test_responses.py")
   ]);
   run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_runtime.py"]);
+  run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_tooling.py"]);
+  run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_evaluation.py"]);
   run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_responses.py"]);
   run("go", [
     "test",
     join(goDirectory, "runtime.go"),
     join(goDirectory, "runtime_test.go"),
+    join(goDirectory, "tooling.go"),
+    join(goDirectory, "tooling_test.go"),
+    join(goDirectory, "evaluation.go"),
+    join(goDirectory, "evaluation_test.go"),
     join(goDirectory, "responses_provider.go"),
     join(goDirectory, "responses_provider_test.go")
   ]);
@@ -95,6 +118,10 @@ try {
     "gofmt",
     [
       "-d",
+      join(goDirectory, "tooling.go"),
+      join(goDirectory, "tooling_test.go"),
+      join(goDirectory, "evaluation.go"),
+      join(goDirectory, "evaluation_test.go"),
       join(goDirectory, "responses_provider.go"),
       join(goDirectory, "responses_provider_test.go")
     ],

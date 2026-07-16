@@ -1,4 +1,5 @@
 import { javaScriptIntegrations } from "./integrations/javascript.js";
+import { javaScriptRuntimeModules } from "./modules/javascript.js";
 import { javaScriptProviders } from "./providers/javascript.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
@@ -580,6 +581,7 @@ export const javascriptRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "runtime.test.js",
   testSource: TEST_SOURCE,
+  modules: javaScriptRuntimeModules,
   integrations: javaScriptIntegrations,
   providers: javaScriptProviders
 });

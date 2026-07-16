@@ -1,4 +1,5 @@
 import { pythonIntegrations } from "./integrations/python.js";
+import { pythonRuntimeModules } from "./modules/python.js";
 import { pythonProviders } from "./providers/python.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
@@ -745,6 +746,7 @@ export const pythonRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "test_runtime.py",
   testSource: TEST_SOURCE,
+  modules: pythonRuntimeModules,
   integrations: pythonIntegrations,
   providers: pythonProviders
 });
