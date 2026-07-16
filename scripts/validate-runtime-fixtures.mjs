@@ -52,6 +52,10 @@ try {
     "NodeNext",
     "--moduleResolution",
     "NodeNext",
+    "--types",
+    "node",
+    "--typeRoots",
+    resolve("node_modules", "@types"),
     "--skipLibCheck",
     join(typeScriptDirectory, "runtime.ts"),
     join(typeScriptDirectory, "runtime.test.ts")
