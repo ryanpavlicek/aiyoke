@@ -23,6 +23,21 @@ generated setup template. Stubs, TODOs, and prose-only recommendations do not
 qualify as support. Services Aiyoke should not operate itself, such as a hosted
 trace store or moderation backend, use the second form.
 
+### Delivery boundary
+
+| Capability | Generated first-party behavior | External integration boundary |
+| --- | --- | --- |
+| Model execution | Retry, timeout, fallback, circuit breaking, validation, repair, routing, budgets | Registered model/provider adapter |
+| Tools | Typed registry, validation, approval, deadline/cancellation, redacted events | Approval and event-sink ports |
+| Evaluation | Versioned suites, deterministic sampling, concurrency, scoring, baseline regression | Report-sink and human-feedback ports |
+| Observability | Correlated redacted lifecycle and tool events, latency, usage and cost fields | Event-sink/trace adapter port |
+| Safety | Composable input/output/tool guards and fail-closed approval decisions | Moderation/policy adapters behind guard and approval ports |
+| Caching | Cache keying and explicit cache outcomes in the runtime lifecycle | Registered cache port for an application-selected store |
+
+The port is part of the generated source contract and is exercised with an
+in-memory fake or reference adapter in native tests. No capability is claimed on
+the strength of prose alone.
+
 ## 1. Reliability and robustness
 
 Generated runtime templates must provide:
@@ -46,6 +61,8 @@ Generated runtime templates must support versioned prompts and configuration,
 offline fixture evaluation, regression baselines, optional online sampling, and a
 registered human-feedback port. Evaluation results must record enough immutable
 metadata to reproduce the model, route, prompt, tools, and policy configuration.
+Cancellation must remain distinguishable from deterministic sampling so aborted
+cases are never reported as intentionally excluded.
 
 ## 4. Safety and control
 
@@ -83,6 +100,13 @@ and JavaScript may share one package implementation with distinct consumer
 fixtures. Python, Rust, and Go have their own generated runtime modules. Each
 language fixture must run its native formatter, compiler or type checker, unit
 tests, and an adversarial conformance suite in CI.
+
+All languages generate separate stable runtime, tooling, evaluation, framework,
+and provider modules. Dependencies flow downward: framework/provider/evaluation/
+tooling modules import or compose the stable runtime contract; `runtime` never
+imports them. Runtime module definitions are registered with the language
+template, so adding a capability does not add provider or feature branching to
+the core renderer.
 
 Framework support means a thin integration example and verified request lifecycle,
 not a copy of the runtime for every framework. Target support means native

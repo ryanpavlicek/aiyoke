@@ -31,7 +31,7 @@ that does not cover the stated scope are not completion evidence.
 | CI | Partial | Linux and Node 22/24 run the full check; Windows, macOS, packaging, security, and release jobs are missing. |
 | Distribution and rollback | Missing | No publish workflow, provenance, package smoke test, SBOM, upgrade test, or rollback procedure exists. |
 | Public documentation | Partial | Architecture and extension notes exist; README installation, tutorials, recipes, API reference, troubleshooting, and release operations are incomplete. |
-| Production runtime templates | Partial | All five registered templates generate a standard-library execution facade with adapter/guard registries, typed lifecycle state, deadlines/cancellation, retry/fallback/circuit breaking, validation/repair, redacted events, approval, cache/evaluation ports, budgets, and bounded batch concurrency. Generated native suites pass Node, TypeScript, Python, Go, and Rust compiler/formatter gates. Registered framework adapters compile/import against pinned real dependencies. Registered OpenRouter/xAI Responses adapters include native mock tests in every language; Rust uses the documented typed transport port. Tool execution, evaluation runners, live opt-in smoke coverage, response-size adversarial coverage, and the remaining contract matrix are still open. |
+| Production runtime templates | Partial | All five registered templates generate a standard-library execution facade with adapter/guard registries, typed lifecycle state, deadlines/cancellation, retry/fallback/circuit breaking, validation/repair, redacted events, approval, cache/evaluation ports, budgets, and bounded batch concurrency. Registered tooling modules add validation, approval, deadlines/cancellation, redacted events, and exception/panic containment. Registered evaluation modules add versioned offline/sampled suites, bounded concurrency, reproducibility metadata, report/feedback ports, and regression decisions. Generated native suites pass Node, TypeScript, Python, Go, and Rust compiler/formatter gates. Framework adapters compile/import against pinned real dependencies. Registered OpenRouter/xAI Responses adapters include native mock tests in every language; Rust uses the documented typed transport port. Live opt-in smoke coverage, response-size adversarial coverage, and the remaining contract matrix are still open. |
 
 ## 0.2 release gates
 
@@ -57,6 +57,9 @@ and 24 after a 96-test local gate. The schema-v3 runtime facade and generated
 native suites passed Node, TypeScript, Python, Go, and Rust validation in GitHub
 Actions run `29521118163`; the work remains unreleased until every gate below is
 proven. Framework adapter dependency compatibility passed in run `29522313151`.
+Registered tool and evaluation modules passed native formatter, compiler/type
+checker, behavior, cancellation, and panic/exception containment gates in run
+`29526999932`.
 
 ## 0.3 release gates
 

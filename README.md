@@ -23,6 +23,13 @@ tests under `aiyoke-runtime/`. The generated runtime handles deadlines,
 cancellation, retries, fallbacks, circuit breaking, output validation and repair,
 redacted events, guards and approval, cache/evaluation ports, token and cost
 budgets, and bounded batch concurrency without adding a provider SDK dependency.
+Each runtime also includes registered `modules/tooling` and `modules/evaluation`
+artifacts. They provide validated and approval-gated tool execution, redacted tool
+events, bounded deadlines, versioned offline or sampled-online evaluation suites,
+reproducibility metadata, baseline regression checks, report-sink delivery state,
+and a human-feedback port. Capabilities that require an external service remain
+explicit ports with runnable fake/reference tests rather than hidden hosted
+dependencies.
 Selected frameworks also receive registered thin request adapters that translate
 framework request context, authorization inputs, cancellation where available,
 and typed harness results without duplicating the runtime core.

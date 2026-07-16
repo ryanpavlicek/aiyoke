@@ -41,6 +41,14 @@ receive registered thin request-lifecycle adapters; a clean CI fixture checks th
 against pinned real releases of every framework in this matrix. Request-level
 behavioral/adversarial fixtures are still required before 0.3 support is final.
 
+Every language also receives registered tooling and evaluation modules. Tooling
+includes typed registration, input/output validation, approval, cancellation and
+deadlines, panic/exception containment, and redacted event delivery. Evaluation
+includes versioned suites, offline and deterministic sampled-online modes, bounded
+concurrency, provider/scorer failure states, report delivery, baseline comparison,
+and human feedback. External approval, telemetry, report storage, and feedback
+systems connect through generated ports and native fake-backed contract tests.
+
 Selecting OpenRouter or the xAI API emits registered Responses API adapters and
 native mock tests in all five languages. TypeScript, JavaScript, Python, and Go
 ship an HTTP implementation; Rust ships the stable transport port and adapter

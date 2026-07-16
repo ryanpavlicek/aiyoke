@@ -31,6 +31,11 @@ All notable changes to this project are documented here. The project follows
   cost/usage mapping, retry classification, endpoint validation, and credential
   redaction. Rust deliberately uses a typed transport port rather than choosing
   an application TLS crate.
+- Registered native tooling and evaluation modules for all five languages,
+  including typed tool registries, validation, approval, cancellation/deadlines,
+  redacted events, versioned offline and sampled-online suites, bounded
+  concurrency, reproducibility metadata, baseline regression decisions, report
+  sinks, human feedback, and adversarial exception/panic containment tests.
 
 ## 0.1.0 — 2026-07-16
 
