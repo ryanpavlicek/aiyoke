@@ -47,8 +47,14 @@ events, guards and approvals, cache/evaluation ports, token and cost budgets, an
 bounded batch concurrency. CI executes the generated native test suites and runs
 the applicable compilers, type checkers, and formatters. Selected frameworks also
 receive registered thin request-lifecycle adapters; a clean CI fixture checks them
-against pinned real releases of every framework in this matrix. Request-level
-behavioral/adversarial fixtures are still required before 0.3 support is final.
+against pinned real releases of every framework in this matrix. Behavioral
+fixtures execute every adapter with real framework request/response objects and
+verify authorization propagation, success and typed-failure mapping, invalid
+request handling, exception forwarding, and cancellation. Python exposes an
+optional asynchronous cancellation-probe factory for Django/Flask servers that
+cannot guarantee disconnect cancellation; Rust request factories return typed
+`ExecuteOptions` so Axum/Actix applications can inject cancellation without a
+framework dependency in the runtime core.
 
 Every language also receives registered tooling and evaluation modules. Tooling
 includes typed registration, input/output validation, approval, cancellation and

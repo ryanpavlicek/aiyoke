@@ -19,6 +19,8 @@ func chiFailureStatus(kind FailureKind) int {
 		return http.StatusForbidden
 	case FailureBudgetExhausted, FailureRateLimit:
 		return http.StatusTooManyRequests
+	case FailureCancelled:
+		return 499
 	case FailureTimeout:
 		return http.StatusGatewayTimeout
 	default:
@@ -67,6 +69,8 @@ func ginFailureStatus(kind FailureKind) int {
 		return http.StatusForbidden
 	case FailureBudgetExhausted, FailureRateLimit:
 		return http.StatusTooManyRequests
+	case FailureCancelled:
+		return 499
 	case FailureTimeout:
 		return http.StatusGatewayTimeout
 	default:
@@ -109,6 +113,8 @@ func fiberFailureStatus(kind FailureKind) int {
 		return fiber.StatusForbidden
 	case FailureBudgetExhausted, FailureRateLimit:
 		return fiber.StatusTooManyRequests
+	case FailureCancelled:
+		return 499
 	case FailureTimeout:
 		return fiber.StatusGatewayTimeout
 	default:

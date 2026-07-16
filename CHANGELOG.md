@@ -69,6 +69,10 @@ All notable changes to this project are documented here. The project follows
   SHA-256-pinned Grok Build inspection. ChatGPT manifests, marketplaces, hooks,
   MCP endpoints, portable tool aliases, and read-only Claude subagents now render
   directly into their documented native client shapes.
+- Real-framework request lifecycle fixtures for every supported adapter, including
+  authorization propagation, typed HTTP failures, disconnect cancellation and
+  exception forwarding. Python supplies an asynchronous cancellation-probe port;
+  Rust request factories supply typed execution options for cancellation injection.
 
 ## 0.1.0 — 2026-07-16
 

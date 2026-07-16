@@ -238,6 +238,16 @@ describe("runtime template extensions", () => {
       for (const artifact of renderedIntegrations) {
         expect(artifact.content).not.toMatch(/\bTODO\b/i);
         expect(artifact.content).toMatch(/HarnessRuntime|runtime\.execute|runtime\.Execute/);
+        expect(artifact.content).toContain("499");
+      }
+      const integrationSource = renderedIntegrations.map((artifact) => artifact.content).join("\n");
+      if (language === "python") {
+        expect(integrationSource).toContain("cancellation_probe_factory");
+        expect(integrationSource).toContain("CancelledError");
+      }
+      if (language === "rust") {
+        expect(integrationSource).toContain("ExecuteOptions");
+        expect(integrationSource).toContain("Result<(ModelRequest<I>, ExecuteOptions<O>), String>");
       }
       const guidance = artifacts.find((artifact) => artifact.path.endsWith("README.md"));
       for (const [framework] of integrations) {

@@ -4,6 +4,7 @@ const statusHelper = `function statusForFailure(kind) {
   if (kind === "guard-rejected") return 400;
   if (kind === "approval-required") return 403;
   if (kind === "budget-exhausted" || kind === "rate-limit") return 429;
+  if (kind === "cancelled") return 499;
   if (kind === "timeout") return 504;
   return 502;
 }

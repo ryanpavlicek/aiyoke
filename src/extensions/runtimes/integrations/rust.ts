@@ -13,12 +13,16 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-pub type AxumRequestFactory<I> =
-    dyn Fn(I, &HeaderMap) -> Result<ModelRequest<I>, String> + Send + Sync;
+pub type AxumRequestFactory<I, O> = dyn Fn(
+        I,
+        &HeaderMap,
+    ) -> Result<(ModelRequest<I>, ExecuteOptions<O>), String>
+    + Send
+    + Sync;
 
 pub struct AiyokeAxumState<I, O> {
     pub runtime: Arc<HarnessRuntime<I, O>>,
-    pub request_factory: Arc<AxumRequestFactory<I>>,
+    pub request_factory: Arc<AxumRequestFactory<I, O>>,
 }
 
 fn axum_failure_status(kind: FailureKind) -> StatusCode {
@@ -26,6 +30,7 @@ fn axum_failure_status(kind: FailureKind) -> StatusCode {
         FailureKind::GuardRejected => StatusCode::BAD_REQUEST,
         FailureKind::ApprovalRequired => StatusCode::FORBIDDEN,
         FailureKind::BudgetExhausted | FailureKind::RateLimit => StatusCode::TOO_MANY_REQUESTS,
+        FailureKind::Cancelled => StatusCode::from_u16(499).expect("499 is a valid status"),
         FailureKind::Timeout => StatusCode::GATEWAY_TIMEOUT,
         _ => StatusCode::BAD_GATEWAY,
     }
@@ -40,13 +45,12 @@ where
     I: Clone + DeserializeOwned + Send + Sync + 'static,
     O: Clone + Serialize + Send + Sync + 'static,
 {
-    let request = match (state.request_factory)(input, &headers) {
+    let (request, execute_options) = match (state.request_factory)(input, &headers) {
         Ok(request) => request,
         Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
     };
     let runtime = state.runtime.clone();
-    match tokio::task::spawn_blocking(move || runtime.execute(request, &ExecuteOptions::default()))
-        .await
+    match tokio::task::spawn_blocking(move || runtime.execute(request, &execute_options)).await
     {
         Ok(ModelResult::Success { value, usage }) => Json(json!({
             "data": value,
@@ -75,12 +79,16 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-pub type ActixRequestFactory<I> =
-    dyn Fn(I, &HttpRequest) -> Result<ModelRequest<I>, String> + Send + Sync;
+pub type ActixRequestFactory<I, O> = dyn Fn(
+        I,
+        &HttpRequest,
+    ) -> Result<(ModelRequest<I>, ExecuteOptions<O>), String>
+    + Send
+    + Sync;
 
 pub struct AiyokeActixState<I, O> {
     pub runtime: Arc<HarnessRuntime<I, O>>,
-    pub request_factory: Arc<ActixRequestFactory<I>>,
+    pub request_factory: Arc<ActixRequestFactory<I, O>>,
 }
 
 fn actix_failure_status(kind: FailureKind) -> actix_web::http::StatusCode {
@@ -89,6 +97,9 @@ fn actix_failure_status(kind: FailureKind) -> actix_web::http::StatusCode {
         FailureKind::ApprovalRequired => actix_web::http::StatusCode::FORBIDDEN,
         FailureKind::BudgetExhausted | FailureKind::RateLimit => {
             actix_web::http::StatusCode::TOO_MANY_REQUESTS
+        }
+        FailureKind::Cancelled => {
+            actix_web::http::StatusCode::from_u16(499).expect("499 is a valid status")
         }
         FailureKind::Timeout => actix_web::http::StatusCode::GATEWAY_TIMEOUT,
         _ => actix_web::http::StatusCode::BAD_GATEWAY,
@@ -104,12 +115,12 @@ where
     I: Clone + DeserializeOwned + Send + Sync + 'static,
     O: Clone + Serialize + Send + Sync + 'static,
 {
-    let model_request = match (state.request_factory)(body.into_inner(), &request) {
+    let (model_request, execute_options) = match (state.request_factory)(body.into_inner(), &request) {
         Ok(request) => request,
         Err(message) => return HttpResponse::BadRequest().json(json!({ "error": message })),
     };
     let runtime = state.runtime.clone();
-    match web::block(move || runtime.execute(model_request, &ExecuteOptions::default())).await {
+    match web::block(move || runtime.execute(model_request, &execute_options)).await {
         Ok(ModelResult::Success { value, usage }) => HttpResponse::Ok().json(json!({
             "data": value,
             "usage": {
