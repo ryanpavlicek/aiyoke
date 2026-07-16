@@ -172,6 +172,7 @@ func (adapter *ResponsesAPIAdapter) Invoke(ctx context.Context, request ModelReq
 			return ModelFailure{
 				Kind: FailureTimeout, Message: "The provider request deadline expired.", Retryable: true,
 			}
+		}
 		if ctx.Err() != nil {
 			return ModelFailure{Kind: FailureCancelled, Message: "The provider request was cancelled."}
 		}
