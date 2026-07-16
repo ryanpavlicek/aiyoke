@@ -2,11 +2,15 @@ import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
 const SOURCE = `from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from enum import Enum
 from random import random
 from time import monotonic
-from typing import Any, Awaitable, Callable, Mapping, Protocol
+from typing import Any, Callable, Generic, Mapping, Protocol, Sequence, TypeVar
+
+
+T = TypeVar("T")
 
 
 class FailureKind(str, Enum):
@@ -27,6 +31,7 @@ class ModelRequest:
     route: str
     prompt_version: str
     input: Any
+    input_tokens: int
     max_output_tokens: int
     metadata: Mapping[str, str]
 
@@ -46,8 +51,17 @@ class ModelFailure:
     provider_code: str | None = None
 
 
+@dataclass(frozen=True)
+class ModelSuccess(Generic[T]):
+    value: T
+    usage: Usage
+
+
+ModelResult = ModelSuccess[T] | ModelFailure
+
+
 class ModelAdapter(Protocol):
-    async def invoke(self, request: ModelRequest) -> tuple[Any, Usage] | ModelFailure: ...
+    async def invoke(self, request: ModelRequest) -> ModelResult[Any]: ...
 
 
 class EventSink(Protocol):
@@ -55,7 +69,7 @@ class EventSink(Protocol):
 
 
 class Guard(Protocol):
-    async def check(self, request: ModelRequest) -> str | None: ...
+    async def check(self, context: GuardContext) -> GuardDecision: ...
 
 
 class CachePort(Protocol):
@@ -68,7 +82,121 @@ class ApprovalPort(Protocol):
 
 
 class EvaluationPort(Protocol):
-    async def record(self, request: ModelRequest, result: Any | ModelFailure) -> None: ...
+    async def record(self, request: ModelRequest, result: ModelResult[Any]) -> None: ...
+
+
+class HumanFeedbackPort(Protocol):
+    async def record(self, request_id: str, score: float, note: str | None = None) -> None: ...
+
+
+class GuardStage(str, Enum):
+    INPUT = "input"
+    OUTPUT = "output"
+    TOOL = "tool"
+
+
+@dataclass(frozen=True)
+class GuardContext:
+    stage: GuardStage
+    request: ModelRequest
+    value: Any
+
+
+@dataclass(frozen=True)
+class GuardAllowed:
+    allowed: bool = True
+
+
+@dataclass(frozen=True)
+class GuardRejected:
+    reason: str
+    allowed: bool = False
+
+
+GuardDecision = GuardAllowed | GuardRejected
+
+
+@dataclass(frozen=True)
+class ValidationSuccess(Generic[T]):
+    value: T
+
+
+@dataclass(frozen=True)
+class ValidationFailure:
+    reason: str
+
+
+ValidationResult = ValidationSuccess[T] | ValidationFailure
+
+
+class OutputValidator(Protocol, Generic[T]):
+    def validate(self, value: Any) -> ValidationResult[T]: ...
+
+
+class RepairPort(Protocol):
+    async def repair(self, request: ModelRequest, invalid_value: Any, reason: str) -> Any: ...
+
+
+@dataclass(frozen=True)
+class RetryOptions:
+    max_attempts: int
+    base_delay_ms: int
+    max_delay_ms: int
+    jitter_ratio: float
+
+
+@dataclass(frozen=True)
+class RuntimeOptions:
+    timeout_ms: int
+    retry: RetryOptions
+    fallback_routes: Sequence[str]
+    max_repair_attempts: int
+    max_input_tokens: int
+    max_output_tokens: int
+    max_concurrency: int
+    max_batch_size: int
+    circuit_failure_threshold: int
+    circuit_reset_after_seconds: float
+    max_estimated_cost_usd: float | None = None
+
+
+@dataclass(frozen=True)
+class ExecuteOptions(Generic[T]):
+    validator: OutputValidator[T] | None = None
+    cache_key: str | None = None
+    approval_reason: str | None = None
+
+
+class AdapterRegistry:
+    def __init__(self) -> None:
+        self._adapters: dict[str, ModelAdapter] = {}
+
+    def register(self, route: str, adapter: ModelAdapter) -> AdapterRegistry:
+        if not route.strip():
+            raise ValueError("route must not be empty")
+        if route in self._adapters:
+            raise ValueError("adapter already registered for route " + route)
+        self._adapters[route] = adapter
+        return self
+
+    def get(self, route: str) -> ModelAdapter | None:
+        return self._adapters.get(route)
+
+
+class GuardRegistry:
+    def __init__(self) -> None:
+        self._guards: dict[GuardStage, list[Guard]] = {}
+
+    def register(self, stage: GuardStage, guard: Guard) -> GuardRegistry:
+        self._guards.setdefault(stage, []).append(guard)
+        return self
+
+    async def check(self, context: GuardContext) -> GuardDecision:
+        for guard in self._guards.get(context.stage, []):
+            decision = await guard.check(context)
+            if isinstance(decision, GuardRejected):
+                return decision
+        return GuardAllowed()
 
 
 def retry_delay_ms(
@@ -135,15 +263,303 @@ class CircuitBreaker:
         if self._state is CircuitState.HALF_OPEN or self._failures >= self._failure_threshold:
             self._state = CircuitState.OPEN
             self._opened_at = current
+
+
+class HarnessRuntime:
+    def __init__(
+        self,
+        options: RuntimeOptions,
+        adapters: AdapterRegistry,
+        *,
+        guards: GuardRegistry | None = None,
+        events: EventSink | None = None,
+        cache: CachePort | None = None,
+        approval: ApprovalPort | None = None,
+        evaluation: EvaluationPort | None = None,
+        repair: RepairPort | None = None,
+        clock: Callable[[], float] = monotonic,
+        random_value: Callable[[], float] = random,
+        sleep: Callable[[float], Any] = asyncio.sleep,
+    ) -> None:
+        if options.timeout_ms < 1 or options.retry.max_attempts < 1:
+            raise ValueError("timeout and max attempts must be positive")
+        if options.max_concurrency < 1 or options.max_batch_size < 1:
+            raise ValueError("concurrency and batch limits must be positive")
+        self.options = options
+        self.adapters = adapters
+        self.guards = guards
+        self.events = events
+        self.cache = cache
+        self.approval = approval
+        self.evaluation = evaluation
+        self.repair = repair
+        self._clock = clock
+        self._random = random_value
+        self._sleep = sleep
+        self._gate = asyncio.Semaphore(options.max_concurrency)
+        self._circuits: dict[str, CircuitBreaker] = {}
+
+    async def execute(
+        self, request: ModelRequest, execute_options: ExecuteOptions[T] | None = None
+    ) -> ModelResult[T]:
+        selected = execute_options or ExecuteOptions[T]()
+        try:
+            async with self._gate:
+                return await self._execute_with_capacity(request, selected)
+        except asyncio.CancelledError:
+            return ModelFailure(FailureKind.CANCELLED, "The request was cancelled.", False)
+
+    async def execute_batch(
+        self, requests: Sequence[ModelRequest], execute_options: ExecuteOptions[T] | None = None
+    ) -> Sequence[ModelResult[T]]:
+        if len(requests) > self.options.max_batch_size:
+            raise ValueError("batch exceeds max_batch_size")
+        return await asyncio.gather(*(self.execute(request, execute_options) for request in requests))
+
+    async def _execute_with_capacity(
+        self, request: ModelRequest, execute_options: ExecuteOptions[T]
+    ) -> ModelResult[T]:
+        started_at = self._clock()
+        await self._emit("request-started", request)
+        budget_failure = enforce_budget(
+            request,
+            request.input_tokens,
+            self.options.max_input_tokens,
+            self.options.max_output_tokens,
+        )
+        if budget_failure is not None:
+            return await self._finish_failure(request, budget_failure)
+
+        if self.guards is not None:
+            decision = await self.guards.check(
+                GuardContext(GuardStage.INPUT, request, request.input)
+            )
+            if isinstance(decision, GuardRejected):
+                return await self._finish_failure(
+                    request,
+                    ModelFailure(FailureKind.GUARD_REJECTED, decision.reason, False),
+                )
+
+        if execute_options.approval_reason is not None:
+            approved = self.approval is not None and await self.approval.approve(
+                request, execute_options.approval_reason
+            )
+            if not approved:
+                return await self._finish_failure(
+                    request,
+                    ModelFailure(
+                        FailureKind.APPROVAL_REQUIRED,
+                        "The configured human approval was not granted.",
+                        False,
+                    ),
+                )
+
+        if execute_options.cache_key is not None and self.cache is not None:
+            cached = await self.cache.get(execute_options.cache_key)
+            if cached is not None:
+                await self._emit("cache-hit", request)
+                result = ModelSuccess(
+                    cached,
+                    Usage(input_tokens=0, output_tokens=0, estimated_cost_usd=0),
+                )
+                await self._record(request, result)
+                return result
+
+        routes = list(dict.fromkeys([request.route, *self.options.fallback_routes]))
+        final_failure = ModelFailure(
+            FailureKind.PROVIDER,
+            "No registered route could complete the request.",
+            False,
+        )
+        for route_index, route in enumerate(routes):
+            if route_index > 0:
+                await self._emit("fallback-selected", request, route=route)
+            adapter = self.adapters.get(route)
+            if adapter is None:
+                final_failure = ModelFailure(
+                    FailureKind.PROVIDER,
+                    "No adapter is registered for route " + route + ".",
+                    False,
+                )
+                continue
+            circuit = self._circuit(route)
+            if not circuit.allow(self._clock()):
+                final_failure = ModelFailure(
+                    FailureKind.CIRCUIT_OPEN,
+                    "The circuit is open for route " + route + ".",
+                    True,
+                )
+                continue
+
+            for attempt in range(1, self.options.retry.max_attempts + 1):
+                await self._emit("attempt-started", request, route=route, attempt=attempt)
+                result = await self._invoke(adapter, request)
+                if isinstance(result, ModelSuccess):
+                    resolved = await self._validate_and_repair(
+                        request, result.value, execute_options.validator
+                    )
+                    if isinstance(resolved, ModelFailure):
+                        final_failure = resolved
+                        break
+                    if self.guards is not None:
+                        decision = await self.guards.check(
+                            GuardContext(GuardStage.OUTPUT, request, resolved)
+                        )
+                        if isinstance(decision, GuardRejected):
+                            return await self._finish_failure(
+                                request,
+                                ModelFailure(FailureKind.GUARD_REJECTED, decision.reason, False),
+                            )
+                    if (
+                        self.options.max_estimated_cost_usd is not None
+                        and result.usage.estimated_cost_usd
+                        > self.options.max_estimated_cost_usd
+                    ):
+                        return await self._finish_failure(
+                            request,
+                            ModelFailure(
+                                FailureKind.BUDGET_EXHAUSTED,
+                                "The result exceeds its configured cost budget.",
+                                False,
+                            ),
+                        )
+                    circuit.success()
+                    success = ModelSuccess(resolved, result.usage)
+                    if execute_options.cache_key is not None and self.cache is not None:
+                        await self.cache.set(execute_options.cache_key, resolved)
+                    await self._emit(
+                        "request-succeeded",
+                        request,
+                        usage=result.usage,
+                        latency_ms=max(0, round((self._clock() - started_at) * 1000)),
+                    )
+                    await self._record(request, success)
+                    return success
+
+                final_failure = result
+                if result.retryable:
+                    circuit.failure(self._clock())
+                if not result.retryable or attempt >= self.options.retry.max_attempts:
+                    break
+                delay_ms = retry_delay_ms(
+                    attempt,
+                    self.options.retry.base_delay_ms,
+                    self.options.retry.max_delay_ms,
+                    self.options.retry.jitter_ratio,
+                    self._random,
+                )
+                await self._emit(
+                    "retry-scheduled", request, delay_ms=delay_ms, attempt=attempt
+                )
+                await self._sleep(delay_ms / 1000)
+
+        return await self._finish_failure(request, final_failure)
+
+    async def _invoke(
+        self, adapter: ModelAdapter, request: ModelRequest
+    ) -> ModelResult[Any]:
+        try:
+            async with asyncio.timeout(self.options.timeout_ms / 1000):
+                return await adapter.invoke(request)
+        except TimeoutError:
+            return ModelFailure(
+                FailureKind.TIMEOUT, "The model deadline expired.", True
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            return ModelFailure(FailureKind.PROVIDER, str(error), True)
+
+    async def _validate_and_repair(
+        self,
+        request: ModelRequest,
+        initial_value: Any,
+        validator: OutputValidator[T] | None,
+    ) -> T | ModelFailure:
+        if validator is None:
+            return initial_value
+        candidate = initial_value
+        for repair_attempt in range(self.options.max_repair_attempts + 1):
+            validation = validator.validate(candidate)
+            if isinstance(validation, ValidationSuccess):
+                return validation.value
+            if repair_attempt >= self.options.max_repair_attempts or self.repair is None:
+                return ModelFailure(FailureKind.INVALID_OUTPUT, validation.reason, False)
+            try:
+                candidate = await self.repair.repair(
+                    request, candidate, validation.reason
+                )
+            except Exception as error:
+                return ModelFailure(FailureKind.INVALID_OUTPUT, str(error), False)
+        return ModelFailure(
+            FailureKind.INVALID_OUTPUT,
+            "Structured output could not be validated.",
+            False,
+        )
+
+    def _circuit(self, route: str) -> CircuitBreaker:
+        circuit = self._circuits.get(route)
+        if circuit is None:
+            circuit = CircuitBreaker(
+                self.options.circuit_failure_threshold,
+                self.options.circuit_reset_after_seconds,
+            )
+            self._circuits[route] = circuit
+        return circuit
+
+    async def _finish_failure(
+        self, request: ModelRequest, failure: ModelFailure
+    ) -> ModelFailure:
+        await self._emit("request-failed", request, failure_kind=failure.kind.value)
+        await self._record(request, failure)
+        return failure
+
+    async def _record(self, request: ModelRequest, result: ModelResult[Any]) -> None:
+        if self.evaluation is None:
+            return
+        try:
+            await self.evaluation.record(request, result)
+        except Exception:
+            pass
+
+    async def _emit(self, event_type: str, request: ModelRequest, **details: Any) -> None:
+        if self.events is None:
+            return
+        event = {
+            "type": event_type,
+            "request_id": request.request_id,
+            "occurred_at": self._clock(),
+            "prompt_version": request.prompt_version,
+            "metadata_keys": sorted(request.metadata.keys()),
+            **details,
+        }
+        try:
+            await self.events.emit(event)
+        except Exception:
+            pass
 `;
 
-const TEST_SOURCE = `import unittest
+const TEST_SOURCE = `import asyncio
+import unittest
 
 from runtime import (
+    AdapterRegistry,
     CircuitBreaker,
     CircuitState,
+    ExecuteOptions,
     FailureKind,
+    GuardRegistry,
+    GuardRejected,
+    GuardStage,
+    HarnessRuntime,
+    ModelFailure,
     ModelRequest,
+    ModelSuccess,
+    RetryOptions,
+    RuntimeOptions,
+    Usage,
+    ValidationFailure,
+    ValidationSuccess,
     enforce_budget,
     retry_delay_ms,
 )
@@ -151,7 +567,7 @@ from runtime import (
 
 class RuntimePrimitivesTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.request = ModelRequest("request-1", "primary", "v1", {}, 100, {})
+        self.request = ModelRequest("request-1", "primary", "v1", {}, 10, 100, {})
 
     def test_retry_delay_is_bounded_and_deterministic(self) -> None:
         self.assertEqual(retry_delay_ms(2, 100, 1_000, 0.5, lambda: 0), 200)
@@ -174,6 +590,145 @@ class RuntimePrimitivesTest(unittest.TestCase):
         self.assertEqual(breaker.state(0.121), CircuitState.HALF_OPEN)
         breaker.success()
         self.assertTrue(breaker.allow(0.13))
+
+
+class RuntimeFacadeTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.request = ModelRequest(
+            "request-1", "primary", "v1", {}, 10, 100, {"tenant": "secret-value"}
+        )
+        self.options = RuntimeOptions(
+            timeout_ms=1_000,
+            retry=RetryOptions(2, 10, 100, 0),
+            fallback_routes=["fallback"],
+            max_repair_attempts=1,
+            max_input_tokens=100,
+            max_output_tokens=100,
+            max_concurrency=2,
+            max_batch_size=4,
+            circuit_failure_threshold=3,
+            circuit_reset_after_seconds=1,
+        )
+
+    async def test_retry_fallback_repair_and_redacted_events(self) -> None:
+        events = []
+        delays = []
+
+        class Primary:
+            calls = 0
+
+            async def invoke(inner_self, request):
+                inner_self.calls += 1
+                return ModelFailure(FailureKind.RATE_LIMIT, "busy", True)
+
+        class Fallback:
+            async def invoke(self, request):
+                return ModelSuccess({"answer": 42}, Usage(10, 2, 0.01))
+
+        class Validator:
+            def validate(self, value):
+                answer = value.get("answer")
+                if isinstance(answer, str):
+                    return ValidationSuccess({"answer": answer})
+                return ValidationFailure("answer must be a string")
+
+        class Repair:
+            async def repair(self, request, value, reason):
+                return {"answer": str(value["answer"])}
+
+        class Events:
+            async def emit(self, event):
+                events.append(event)
+
+        primary = Primary()
+
+        async def sleep(delay):
+            delays.append(delay)
+
+        runtime = HarnessRuntime(
+            self.options,
+            AdapterRegistry().register("primary", primary).register("fallback", Fallback()),
+            events=Events(),
+            repair=Repair(),
+            clock=lambda: 1,
+            random_value=lambda: 0,
+            sleep=sleep,
+        )
+        result = await runtime.execute(
+            self.request, ExecuteOptions(validator=Validator())
+        )
+        self.assertIsInstance(result, ModelSuccess)
+        self.assertEqual(result.value, {"answer": "42"})
+        self.assertEqual(primary.calls, 2)
+        self.assertEqual(delays, [0.01])
+        self.assertTrue(any(event["type"] == "fallback-selected" for event in events))
+        self.assertEqual(events[0]["metadata_keys"], ["tenant"])
+        self.assertNotIn("input", events[0])
+
+    async def test_guards_and_approval_fail_closed(self) -> None:
+        calls = 0
+
+        class Adapter:
+            async def invoke(self, request):
+                nonlocal calls
+                calls += 1
+                return ModelSuccess("unsafe", Usage(1, 1, 0))
+
+        class RejectGuard:
+            async def check(self, context):
+                return GuardRejected("blocked by policy")
+
+        adapters = AdapterRegistry().register("primary", Adapter())
+        guards = GuardRegistry().register(GuardStage.INPUT, RejectGuard())
+        guarded = await HarnessRuntime(self.options, adapters, guards=guards).execute(
+            self.request
+        )
+        self.assertEqual(guarded.kind, FailureKind.GUARD_REJECTED)
+        approval = await HarnessRuntime(self.options, adapters).execute(
+            self.request, ExecuteOptions(approval_reason="external side effect")
+        )
+        self.assertEqual(approval.kind, FailureKind.APPROVAL_REQUIRED)
+        self.assertEqual(calls, 0)
+
+    async def test_cache_and_batch_concurrency_are_bounded(self) -> None:
+        active = 0
+        maximum_active = 0
+        calls = 0
+        values = {}
+
+        class Adapter:
+            async def invoke(self, request):
+                nonlocal active, maximum_active, calls
+                calls += 1
+                active += 1
+                maximum_active = max(maximum_active, active)
+                await asyncio.sleep(0)
+                active -= 1
+                return ModelSuccess("fresh", Usage(1, 1, 0))
+
+        class Cache:
+            async def get(self, key):
+                return values.get(key)
+
+            async def set(self, key, value):
+                values[key] = value
+
+        options = RuntimeOptions(
+            **{**self.options.__dict__, "max_concurrency": 1}
+        )
+        runtime = HarnessRuntime(
+            options,
+            AdapterRegistry().register("primary", Adapter()),
+            cache=Cache(),
+        )
+        await runtime.execute(self.request, ExecuteOptions(cache_key="one"))
+        cached = await runtime.execute(self.request, ExecuteOptions(cache_key="one"))
+        self.assertEqual(cached.value, "fresh")
+        await runtime.execute_batch(
+            [self.request, ModelRequest("request-2", "primary", "v1", {}, 10, 100, {})]
+        )
+        self.assertEqual(calls, 3)
+        self.assertEqual(maximum_active, 1)
 
 
 if __name__ == "__main__":
