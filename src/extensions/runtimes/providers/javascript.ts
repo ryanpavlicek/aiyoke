@@ -4,6 +4,8 @@ const responses = `function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const defaultMaxResponseBytes = 4 * 1024 * 1024;
+
 function providerFailure(message, retryable, providerCode, secret) {
   const redact = (value) =>
     value === undefined || secret === undefined || secret.length === 0
@@ -58,6 +60,36 @@ function validateEndpoint(endpoint) {
   }
 }
 
+async function readResponseBody(response, maxBytes) {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return { kind: "too-large" };
+  if (response.body === null) return { kind: "body", value: "" };
+  const reader = response.body.getReader();
+  const chunks = [];
+  let length = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      length += chunk.value.byteLength;
+      if (length > maxBytes) {
+        await reader.cancel();
+        return { kind: "too-large" };
+      }
+      chunks.push(chunk.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { kind: "body", value: new TextDecoder().decode(body) };
+}
+
 export function responsesAdapterConfig(provider, model, overrides = {}) {
   if (provider !== "openrouter" && provider !== "xai") {
     throw new TypeError("provider must be openrouter or xai");
@@ -80,6 +112,12 @@ export class ResponsesApiAdapter {
     if (config.model.trim().length === 0) throw new TypeError("model must not be empty");
     if (config.apiKeyEnvironment.trim().length === 0) {
       throw new TypeError("apiKeyEnvironment must not be empty");
+    }
+    if (
+      config.maxResponseBytes !== undefined &&
+      (!Number.isSafeInteger(config.maxResponseBytes) || config.maxResponseBytes <= 0)
+    ) {
+      throw new TypeError("maxResponseBytes must be a positive safe integer");
     }
     this.config = Object.freeze({ ...config });
     this.resolveSecret = resolveSecret;
@@ -137,7 +175,30 @@ export class ResponsesApiAdapter {
         apiKey
       );
     }
-    const payload = await response.json().catch(() => undefined);
+    let body;
+    try {
+      body = await readResponseBody(response, this.config.maxResponseBytes ?? defaultMaxResponseBytes);
+    } catch (error) {
+      return providerFailure(
+        error instanceof Error ? error.message : "The provider response could not be read.",
+        true,
+        "response_read_error",
+        apiKey
+      );
+    }
+    if (body.kind === "too-large") {
+      return providerFailure(
+        "The provider response exceeded the size limit.",
+        false,
+        "response_too_large"
+      );
+    }
+    let payload;
+    try {
+      payload = JSON.parse(body.value);
+    } catch {
+      return providerFailure("The provider returned invalid JSON.", false, "invalid_response");
+    }
     const record = isRecord(payload) ? payload : {};
     if (!response.ok || record.error !== undefined || record.status === "failed") {
       const error = isRecord(record.error) ? record.error : {};
@@ -254,6 +315,30 @@ test("fails closed for missing credentials and unsafe endpoints", async () => {
         () => "secret"
       ),
     /HTTPS/
+  );
+});
+
+test("rejects malformed and oversized responses without buffering past the limit", async () => {
+  const malformed = new ResponsesApiAdapter(
+    responsesAdapterConfig("openrouter", "test/model"),
+    () => "secret",
+    async () => new Response("not-json", { status: 200 })
+  );
+  const malformedResult = await malformed.invoke(request, new AbortController().signal);
+  assert.equal(
+    malformedResult.kind === "failure" ? malformedResult.failure.providerCode : "",
+    "invalid_response"
+  );
+
+  const oversized = new ResponsesApiAdapter(
+    responsesAdapterConfig("openrouter", "test/model", { maxResponseBytes: 8 }),
+    () => "secret",
+    async () => new Response("123456789", { status: 200 })
+  );
+  const oversizedResult = await oversized.invoke(request, new AbortController().signal);
+  assert.equal(
+    oversizedResult.kind === "failure" ? oversizedResult.failure.providerCode : "",
+    "response_too_large"
   );
 });
 `;

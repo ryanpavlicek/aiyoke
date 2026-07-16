@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const maxProviderResponseBytes int64 = 4 << 20
+const defaultMaxProviderResponseBytes int64 = 4 << 20
 
 type SecretResolver func(string) (string, bool)
 
@@ -39,10 +39,13 @@ type ResponsesAdapterConfig struct {
 	InputCostPerMillionTokens  float64
 	OutputCostPerMillionTokens float64
 	CostTickDivisor            float64
+	MaxResponseBytes           int64
 }
 
 func ResponsesConfig(provider ResponsesProvider, model string) ResponsesAdapterConfig {
-	config := ResponsesAdapterConfig{Model: model, Timeout: 30 * time.Second}
+	config := ResponsesAdapterConfig{
+		Model: model, Timeout: 30 * time.Second, MaxResponseBytes: defaultMaxProviderResponseBytes,
+	}
 	switch provider {
 	case ResponsesOpenRouter:
 		config.Endpoint = "https://openrouter.ai/api/v1/responses"
@@ -92,6 +95,9 @@ func NewResponsesAPIAdapter(
 	}
 	if config.Timeout <= 0 {
 		return nil, errors.New("timeout must be positive")
+	}
+	if config.MaxResponseBytes <= 0 {
+		return nil, errors.New("MaxResponseBytes must be positive")
 	}
 	if resolveSecret == nil {
 		return nil, errors.New("secret resolver is required")
@@ -179,11 +185,11 @@ func (adapter *ResponsesAPIAdapter) Invoke(ctx context.Context, request ModelReq
 		return providerFailure(err.Error(), true, "network_error", apiKey)
 	}
 	defer response.Body.Close()
-	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxProviderResponseBytes+1))
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, adapter.config.MaxResponseBytes+1))
 	if err != nil {
 		return providerFailure(err.Error(), true, "response_read_error", apiKey)
 	}
-	if int64(len(responseBody)) > maxProviderResponseBytes {
+	if int64(len(responseBody)) > adapter.config.MaxResponseBytes {
 		return providerFailure("The provider response exceeded the size limit.", false, "response_too_large", "")
 	}
 	var parsed map[string]any
@@ -366,6 +372,37 @@ func TestResponsesProviderFailsClosed(t *testing.T) {
 	config.Endpoint = "http://example.com"
 	if _, err := NewResponsesAPIAdapter(config, func(string) (string, bool) { return "secret", true }, nil); err == nil {
 		t.Fatal("expected an unsafe endpoint error")
+	}
+}
+
+func TestResponsesProviderRejectsMalformedAndOversizedResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte("not-json"))
+	}))
+	defer server.Close()
+	config := ResponsesConfig(ResponsesOpenRouter, "test/model")
+	config.Endpoint = server.URL
+	adapter, err := NewResponsesAPIAdapter(
+		config, func(string) (string, bool) { return "secret", true }, server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	malformed := adapter.Invoke(context.Background(), providerRequest()).(ModelFailure)
+	if malformed.ProviderCode != "invalid_response" {
+		t.Fatalf("unexpected malformed response: %#v", malformed)
+	}
+
+	config.MaxResponseBytes = 7
+	oversizedAdapter, err := NewResponsesAPIAdapter(
+		config, func(string) (string, bool) { return "secret", true }, server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oversized := oversizedAdapter.Invoke(context.Background(), providerRequest()).(ModelFailure)
+	if oversized.ProviderCode != "response_too_large" {
+		t.Fatalf("unexpected oversized response: %#v", oversized)
 	}
 }
 `;

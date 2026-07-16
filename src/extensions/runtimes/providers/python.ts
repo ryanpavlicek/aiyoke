@@ -24,28 +24,31 @@ class HttpResponse:
 
 class HttpPort(Protocol):
     async def post_json(
-        self, endpoint: str, headers: Mapping[str, str], body: bytes, timeout_seconds: float
+        self, endpoint: str, headers: Mapping[str, str], body: bytes, timeout_seconds: float,
+        max_response_bytes: int
     ) -> HttpResponse: ...
 
 
 class UrlLibHttpPort:
     async def post_json(
-        self, endpoint: str, headers: Mapping[str, str], body: bytes, timeout_seconds: float
+        self, endpoint: str, headers: Mapping[str, str], body: bytes, timeout_seconds: float,
+        max_response_bytes: int
     ) -> HttpResponse:
         return await asyncio.to_thread(
-            self._post_json, endpoint, headers, body, timeout_seconds
+            self._post_json, endpoint, headers, body, timeout_seconds, max_response_bytes
         )
 
     @staticmethod
     def _post_json(
-        endpoint: str, headers: Mapping[str, str], body: bytes, timeout_seconds: float
+        endpoint: str, headers: Mapping[str, str], body: bytes, timeout_seconds: float,
+        max_response_bytes: int
     ) -> HttpResponse:
         request = Request(endpoint, data=body, headers=dict(headers), method="POST")
         try:
             with urlopen(request, timeout=timeout_seconds) as response:
-                return HttpResponse(response.status, response.read())
+                return HttpResponse(response.status, response.read(max_response_bytes + 1))
         except HTTPError as error:
-            return HttpResponse(error.code, error.read())
+            return HttpResponse(error.code, error.read(max_response_bytes + 1))
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,7 @@ class ResponsesAdapterConfig:
     input_cost_per_million_tokens: float = 0.0
     output_cost_per_million_tokens: float = 0.0
     cost_tick_divisor: float | None = None
+    max_response_bytes: int = 4 * 1024 * 1024
 
     def __post_init__(self) -> None:
         parsed = urlparse(self.endpoint)
@@ -72,6 +76,10 @@ class ResponsesAdapterConfig:
             raise ValueError("api_key_environment must not be empty")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        if not isinstance(self.max_response_bytes, int) or isinstance(
+            self.max_response_bytes, bool
+        ) or self.max_response_bytes <= 0:
+            raise ValueError("max_response_bytes must be a positive integer")
 
 
 def responses_adapter_config(
@@ -178,15 +186,20 @@ class ResponsesApiAdapter:
                 headers,
                 json.dumps(body, separators=(",", ":")).encode("utf-8"),
                 self.config.timeout_seconds,
+                self.config.max_response_bytes,
             )
         except asyncio.CancelledError:
             raise
         except Exception as error:
             return _failure(str(error), True, "network_error", api_key)
+        if len(response.body) > self.config.max_response_bytes:
+            return _failure(
+                "The provider response exceeded the size limit.", False, "response_too_large"
+            )
         try:
             parsed: Any = json.loads(response.body)
         except (UnicodeDecodeError, json.JSONDecodeError):
-            parsed = {}
+            return _failure("The provider returned invalid JSON.", False, "invalid_response")
         payload: Mapping[str, Any] = parsed if isinstance(parsed, Mapping) else {}
         if response.status < 200 or response.status >= 300 or payload.get("error") is not None:
             error = payload.get("error") if isinstance(payload.get("error"), Mapping) else {}
@@ -258,7 +271,7 @@ class FakeHttp:
         self.authorization = ""
         self.body = {}
 
-    async def post_json(self, endpoint, headers, body, timeout_seconds):
+    async def post_json(self, endpoint, headers, body, timeout_seconds, max_response_bytes):
         self.authorization = headers["Authorization"]
         self.body = json.loads(body)
         return self.response
@@ -325,6 +338,25 @@ class ResponsesProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.provider_code, "missing_credentials")
         with self.assertRaisesRegex(ValueError, "HTTPS"):
             responses_adapter_config("openrouter", "test/model", endpoint="http://example.com")
+
+    async def test_rejects_malformed_and_oversized_responses(self):
+        malformed = ResponsesApiAdapter(
+            responses_adapter_config("openrouter", "test/model"),
+            lambda _: "secret",
+            FakeHttp(HttpResponse(200, b"not-json")),
+        )
+        malformed_result = await malformed.invoke(self.request)
+        self.assertIsInstance(malformed_result, ModelFailure)
+        self.assertEqual(malformed_result.provider_code, "invalid_response")
+
+        oversized = ResponsesApiAdapter(
+            responses_adapter_config("openrouter", "test/model", max_response_bytes=8),
+            lambda _: "secret",
+            FakeHttp(HttpResponse(200, b"123456789")),
+        )
+        oversized_result = await oversized.invoke(self.request)
+        self.assertIsInstance(oversized_result, ModelFailure)
+        self.assertEqual(oversized_result.provider_code, "response_too_large")
 
 
 if __name__ == "__main__":

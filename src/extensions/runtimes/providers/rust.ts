@@ -46,6 +46,7 @@ pub struct ResponsesAdapterConfig {
     pub input_cost_per_million_tokens: f64,
     pub output_cost_per_million_tokens: f64,
     pub cost_tick_divisor: Option<f64>,
+    pub max_response_bytes: usize,
 }
 
 impl ResponsesAdapterConfig {
@@ -71,6 +72,7 @@ impl ResponsesAdapterConfig {
             input_cost_per_million_tokens: 0.0,
             output_cost_per_million_tokens: 0.0,
             cost_tick_divisor,
+            max_response_bytes: 4 * 1024 * 1024,
         }
     }
 }
@@ -98,6 +100,7 @@ pub struct ResponsesTransportRequest {
     pub store: bool,
     pub stream: bool,
     pub timeout: Duration,
+    pub max_response_bytes: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -122,9 +125,11 @@ pub struct ResponsesTransportResponse {
     pub output: Vec<BTreeMap<String, String>>,
     pub usage: ResponsesTransportUsage,
     pub error: Option<ResponsesTransportError>,
+    pub encoded_size_bytes: usize,
 }
 
 // Implement this port with reqwest, ureq, or the consuming application's HTTP stack.
+// The transport must stop reading after request.max_response_bytes + 1 bytes.
 pub trait ResponsesTransport: Send + Sync {
     fn send(
         &self,
@@ -154,6 +159,9 @@ impl ResponsesApiAdapter {
         }
         if config.timeout.is_zero() {
             return Err("timeout must be positive".to_owned());
+        }
+        if config.max_response_bytes == 0 {
+            return Err("max_response_bytes must be positive".to_owned());
         }
         Ok(Self {
             config,
@@ -252,11 +260,20 @@ impl ModelAdapter<ResponsesInput, ResponsesOutput> for ResponsesApiAdapter {
             store: false,
             stream: false,
             timeout: self.config.timeout,
+            max_response_bytes: self.config.max_response_bytes,
         };
         let response = match self.transport.send(&transport_request, context) {
             Ok(response) => response,
             Err(error) => return failure(&error, true, "network_error", &api_key),
         };
+        if response.encoded_size_bytes > self.config.max_response_bytes {
+            return failure(
+                "The provider response exceeded the size limit.",
+                false,
+                "response_too_large",
+                "",
+            );
+        }
         if !(200..300).contains(&response.status_code) || response.error.is_some() {
             let provider_error = response.error.unwrap_or(ResponsesTransportError {
                 message: "The provider rejected the request.".to_owned(),
@@ -383,6 +400,7 @@ fn success_response() -> ResponsesTransportResponse {
             cost_in_usd_ticks: None,
         },
         error: None,
+        encoded_size_bytes: 128,
     }
 }
 
@@ -478,6 +496,32 @@ fn fails_closed_for_missing_credentials_and_unsafe_endpoints() {
         transport,
     )
     .is_err());
+}
+
+#[test]
+fn rejects_oversized_transport_responses() {
+    let transport = Arc::new(FakeTransport {
+        response: ResponsesTransportResponse {
+            encoded_size_bytes: 9,
+            ..success_response()
+        },
+        authorization: Mutex::new(String::new()),
+    });
+    let mut config =
+        ResponsesAdapterConfig::for_provider(ResponsesProvider::OpenRouter, "test/model");
+    config.max_response_bytes = 8;
+    let adapter = ResponsesApiAdapter::new(
+        config,
+        Arc::new(|_: &str| Some("secret".to_owned())),
+        transport,
+    )
+    .unwrap();
+    match adapter.invoke(&request(), &context()) {
+        ModelResult::Failure(failure) => {
+            assert_eq!(failure.provider_code.as_deref(), Some("response_too_large"));
+        }
+        ModelResult::Success { .. } => panic!("expected a failure"),
+    }
 }
 `;
 
