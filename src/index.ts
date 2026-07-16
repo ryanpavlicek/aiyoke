@@ -23,6 +23,9 @@ export type {
   FrameworkExtension,
   LanguageExtension,
   RuntimeTemplateExtension,
+  SignedExtensionDiscoveryOptions,
+  SignedExtensionDiscoveryResult,
+  SignedExtensionManifest,
   TargetExtension
 } from "./extension-sdk/index.js";
 export {
@@ -51,4 +54,15 @@ export async function createAiyoke(
   );
 }
 
-import type { ExtensionLoader as RegisteredExtensionLoader } from "./extension-sdk/index.js";
+export async function discoverSignedExtension(
+  options: SignedDiscoveryOptions
+): Promise<SignedDiscoveryResult> {
+  const discovery = await import("./infrastructure/discovery/index.js");
+  return discovery.discoverSignedExtension(options);
+}
+
+import type {
+  ExtensionLoader as RegisteredExtensionLoader,
+  SignedExtensionDiscoveryOptions as SignedDiscoveryOptions,
+  SignedExtensionDiscoveryResult as SignedDiscoveryResult
+} from "./extension-sdk/index.js";

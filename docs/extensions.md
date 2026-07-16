@@ -90,6 +90,92 @@ const engine = await createAiyoke({
 });
 ```
 
+## Discover a signed package
+
+Programmatic loaders are appropriate for application-owned composition. For an
+installable third-party package, use the signed discovery adapter exported by
+the lazy public facade. Discovery reads a strict, bounded manifest, hashes the
+complete package tree, verifies an Ed25519 signature against an application-owned
+trust store, applies revocations, and returns a consent request without importing
+the package:
+
+```ts
+import { discoverSignedExtension } from "aiyoke";
+
+const trust = {
+  roots: [{ keyId: "publisher-2026", publicKeyPem }],
+  revokedKeyIds: [],
+  revokedContentDigests: [],
+  revokedManifestDigests: []
+};
+
+const pending = await discoverSignedExtension({
+  manifestPath: "./downloads/example/aiyoke-extension.json",
+  packageRoot: "./downloads/example/package",
+  trust,
+  consent: { kind: "pending" }
+});
+
+if (pending.kind === "consent-required") {
+  // Show the signed descriptor, publisher key ID, and exact manifest digest.
+  // Persist approval only after an explicit user decision.
+  const loaded = await discoverSignedExtension({
+    manifestPath: "./downloads/example/aiyoke-extension.json",
+    packageRoot: "./downloads/example/package",
+    trust,
+    consent: { kind: "granted", manifestDigest: pending.manifestDigest }
+  });
+}
+```
+
+Consent is bound to the canonical manifest digest, so changing the descriptor,
+entrypoint, version, package digest, or publisher invalidates prior approval.
+Denied, mismatched, unsigned, untrusted, revoked, symlinked, oversized, or
+tampered packages fail before module import. After verification, discovery
+checks the package a second time and requires the imported loader descriptor to
+exactly match the signed descriptor.
+
+The manifest format is versioned and deliberately narrow:
+
+```json
+{
+  "schemaVersion": 1,
+  "extension": {
+    "kind": "pack",
+    "id": "example-pack",
+    "version": "1.0.0",
+    "apiVersion": "1.0.0",
+    "displayName": "Example pack",
+    "description": "Example signed extension.",
+    "capabilities": ["instructions"],
+    "requires": [],
+    "conflicts": []
+  },
+  "package": {
+    "name": "@example/aiyoke-pack",
+    "version": "1.0.0",
+    "entrypoint": "index.mjs",
+    "exportName": "loader"
+  },
+  "content": {
+    "algorithm": "sha256",
+    "digest": "sha256:<64 lowercase hexadecimal characters>"
+  },
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "publisher-2026",
+    "value": "<base64 signature of the canonical manifest payload>"
+  }
+}
+```
+
+The trust store and consent decision are integration ports: Aiyoke does not
+silently download trust roots, choose publishers, or grant execution. Hosts can
+back those ports with a checked-in enterprise policy, an offline bundle, or an
+audited service. Renderer process isolation is a separate defense and remains a
+0.3 release gate; a valid signature establishes identity and integrity, not that
+the code is harmless.
+
 ## Run the compatibility kit
 
 Before publishing a loader, execute the public kit with a representative typed
@@ -164,7 +250,8 @@ will reject forbidden local static imports.
 ## Trust and release hygiene
 
 An extension can execute code, commands, hooks, and MCP transports. Review it as
-you would any dependency, pin the version, and document network/process access.
+you would any dependency, pin the version, use signed discovery for installable
+third-party packages, and document network/process access.
 Never place API keys in descriptors, artifact content, fixtures, snapshots, or
 logs; use an environment-variable reference.
 

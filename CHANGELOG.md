@@ -45,6 +45,10 @@ All notable changes to this project are documented here. The project follows
   plans, drift checks, and idempotent apply behavior.
 - Property coverage for monorepo serialization and safe Unicode path components,
   including canonical workspace field ordering independent of object construction.
+- Signed third-party extension discovery through the lazy public facade, with a
+  strict versioned manifest, deterministic content-tree digests, Ed25519 trust
+  roots, key/content/manifest revocation, exact-digest consent, resource limits,
+  symlink rejection, revalidation before import, and adversarial tests.
 
 ## 0.1.0 — 2026-07-16
 

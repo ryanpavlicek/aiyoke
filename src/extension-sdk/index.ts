@@ -34,3 +34,17 @@ export {
   type WorkspaceSnapshot
 } from "./contracts.js";
 export { ExtensionRegistry } from "./registry.js";
+export {
+  type ExtensionConsent,
+  type ExtensionTrustRoot,
+  type ExtensionTrustStore,
+  type ManifestCryptoPort,
+  type ManifestRejectionReason,
+  type ManifestVerificationResult,
+  manifestSigningPayload,
+  parseSignedExtensionManifest,
+  type SignedExtensionDiscoveryOptions,
+  type SignedExtensionDiscoveryResult,
+  type SignedExtensionManifest,
+  verifySignedExtensionManifest
+} from "./signed-manifest.js";
