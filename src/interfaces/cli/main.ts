@@ -12,12 +12,13 @@ interface CliOptions {
   readonly force: boolean;
   readonly languages?: readonly string[];
   readonly frameworks?: readonly string[];
+  readonly targets?: readonly string[];
 }
 
 const HELP = `aiyoke — deterministic AI harness compiler
 
 Usage:
-  aiyoke init [--languages python,typescript] [--frameworks fastapi] [--force]
+  aiyoke init [--languages python,typescript] [--frameworks fastapi] [--targets claude-code,codex] [--force]
   aiyoke plan
   aiyoke apply
   aiyoke check
@@ -39,6 +40,14 @@ function splitList(value: string | undefined): readonly string[] | undefined {
     .filter(Boolean);
 }
 
+function optionValue(args: readonly string[], index: number, message: string): string {
+  const value = args[index + 1];
+  if (value === undefined || value.startsWith("-")) {
+    throw new AiyokeError("INVALID_SPEC", message);
+  }
+  return value;
+}
+
 function parseArguments(args: readonly string[]): CliOptions {
   let command = "help";
   let root = process.cwd();
@@ -46,6 +55,7 @@ function parseArguments(args: readonly string[]): CliOptions {
   let force = false;
   let languages: readonly string[] | undefined;
   let frameworks: readonly string[] | undefined;
+  let targets: readonly string[] | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -54,23 +64,20 @@ function parseArguments(args: readonly string[]): CliOptions {
     else if (argument === "--json") json = true;
     else if (argument === "--force") force = true;
     else if (argument === "--root") {
-      const value = args[index + 1];
-      if (value === undefined) throw new AiyokeError("INVALID_SPEC", "--root requires a path.");
+      const value = optionValue(args, index, "--root requires a path.");
       root = value;
       index += 1;
     } else if (argument === "--languages") {
-      const value = args[index + 1];
-      if (value === undefined) {
-        throw new AiyokeError("INVALID_SPEC", "--languages requires a comma-separated list.");
-      }
+      const value = optionValue(args, index, "--languages requires a comma-separated list.");
       languages = splitList(value);
       index += 1;
     } else if (argument === "--frameworks") {
-      const value = args[index + 1];
-      if (value === undefined) {
-        throw new AiyokeError("INVALID_SPEC", "--frameworks requires a comma-separated list.");
-      }
+      const value = optionValue(args, index, "--frameworks requires a comma-separated list.");
       frameworks = splitList(value);
+      index += 1;
+    } else if (argument === "--targets") {
+      const value = optionValue(args, index, "--targets requires a comma-separated list.");
+      targets = splitList(value);
       index += 1;
     } else if (argument.startsWith("-")) {
       throw new AiyokeError("INVALID_SPEC", `Unknown option ${argument}.`);
@@ -80,7 +87,8 @@ function parseArguments(args: readonly string[]): CliOptions {
 
   const optional = {
     ...(languages === undefined ? {} : { languages }),
-    ...(frameworks === undefined ? {} : { frameworks })
+    ...(frameworks === undefined ? {} : { frameworks }),
+    ...(targets === undefined ? {} : { targets })
   };
   return { command, root, json, force, ...optional };
 }
@@ -136,7 +144,10 @@ export async function runCli(args = process.argv.slice(2)): Promise<number> {
           : { languages: options.languages.map(extensionId) }),
         ...(options.frameworks === undefined
           ? {}
-          : { frameworks: options.frameworks.map(extensionId) })
+          : { frameworks: options.frameworks.map(extensionId) }),
+        ...(options.targets === undefined
+          ? {}
+          : { targetAdapters: options.targets.map(extensionId) })
       });
       emit(
         options.json

@@ -134,4 +134,26 @@ describe("first-release workflow", () => {
     expect(findings).toContainEqual(expect.objectContaining({ code: "NO_LANGUAGES" }));
     expect(findings).toContainEqual(expect.objectContaining({ code: "NO_TARGETS" }));
   });
+
+  it("selects built-in target profiles during initialization", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aiyoke-targets-"));
+    temporaryRoots.push(root);
+    const engine = await AiyokeEngine.open(root);
+    const initialized = await engine.initialize({
+      targetAdapters: [extensionId("codex"), extensionId("openrouter")]
+    });
+    expect(initialized.spec.targets.map((target) => target.adapter)).toEqual([
+      "codex",
+      "openrouter"
+    ]);
+    await expect(
+      engine.initialize({ force: true, targetAdapters: [extensionId("unknown-target")] })
+    ).rejects.toThrow(/does not have a built-in initialization profile/);
+    await expect(
+      engine.initialize({
+        force: true,
+        targetAdapters: [extensionId("codex"), extensionId("codex")]
+      })
+    ).rejects.toThrow(/cannot contain duplicates/);
+  });
 });

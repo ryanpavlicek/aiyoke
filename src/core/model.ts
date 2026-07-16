@@ -145,13 +145,25 @@ export interface HarnessModule {
 
 export type ArtifactOwnership = "generated" | "managed-section" | "user-owned";
 
-export interface ArtifactIntent {
+interface ArtifactIntentBase {
   readonly path: string;
   readonly content: string;
-  readonly ownership: ArtifactOwnership;
   readonly source: string;
   readonly executable: boolean;
 }
+
+export interface ManagedSectionMarkers {
+  readonly start: string;
+  readonly end: string;
+}
+
+export type ArtifactIntent =
+  | (ArtifactIntentBase & { readonly ownership: "generated" })
+  | (ArtifactIntentBase & { readonly ownership: "user-owned" })
+  | (ArtifactIntentBase & {
+      readonly ownership: "managed-section";
+      readonly markers: ManagedSectionMarkers;
+    });
 
 export type PlanOperation =
   | { readonly kind: "create"; readonly artifact: ArtifactIntent }

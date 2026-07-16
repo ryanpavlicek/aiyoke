@@ -22,3 +22,5 @@ All notable changes to this project are documented here. The project follows
   the first-release acceptance suite.
 - A five-stack dogfood matrix that exercises all six AI target surfaces for
   Python/FastAPI, TypeScript/Next.js, JavaScript/Express, Rust/Axum, and Go/Gin.
+- Selective `init --targets` profiles and bounded managed-section merging that
+  preserves user-authored content around generated instructions.

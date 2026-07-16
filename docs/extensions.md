@@ -109,6 +109,12 @@ Target renderers return `ArtifactIntent` values and must:
 4. preserve user-owned files and update only managed sections; and
 5. produce the same bytes for the same spec, workspace snapshot, and module set.
 
+Use `ownership: "managed-section"` only for files that may contain user-authored
+content. Aiyoke wraps the rendered content in distinct start/end markers, appends
+the section when no markers exist, replaces only the bounded section on later
+runs, and reports malformed or duplicated markers as conflicts. Generated and
+user-owned artifacts retain their stricter whole-file behavior.
+
 Verification should report structured `VerificationFinding` values. A warning
 is appropriate for provider drift or an optional capability; an error means the
 target artifact cannot be trusted. Verification must not silently repair files.

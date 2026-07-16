@@ -66,8 +66,89 @@ function stableOperation(operation: PlanOperation): object {
     path: operation.artifact.path,
     content: operation.artifact.content,
     ownership: operation.artifact.ownership,
+    ...(operation.artifact.ownership === "managed-section"
+      ? { markers: operation.artifact.markers }
+      : {}),
     executable: operation.artifact.executable,
     source: operation.artifact.source
+  };
+}
+
+type ManagedMergeResult =
+  | { readonly kind: "merged"; readonly content: string }
+  | { readonly kind: "conflict"; readonly reason: string };
+
+function sameManagedMarkers(left: ArtifactIntent, right: ArtifactIntent): boolean {
+  if (left.ownership !== "managed-section" || right.ownership !== "managed-section") {
+    return left.ownership === right.ownership;
+  }
+  return left.markers.start === right.markers.start && left.markers.end === right.markers.end;
+}
+
+function managedSection(
+  artifact: Extract<ArtifactIntent, { ownership: "managed-section" }>
+): string {
+  return `${artifact.markers.start}\n${artifact.content}${artifact.markers.end}\n`;
+}
+
+function mergeManagedSection(
+  previous: string,
+  artifact: Extract<ArtifactIntent, { ownership: "managed-section" }>
+): ManagedMergeResult {
+  const { start, end } = artifact.markers;
+  if (
+    start.length === 0 ||
+    end.length === 0 ||
+    start === end ||
+    start.includes("\n") ||
+    end.includes("\n")
+  ) {
+    return { kind: "conflict", reason: "Managed-section markers must be distinct single lines." };
+  }
+  if (artifact.content.includes(start) || artifact.content.includes(end)) {
+    return { kind: "conflict", reason: "Generated content contains its managed-section marker." };
+  }
+
+  const startIndex = previous.indexOf(start);
+  const endIndex = previous.indexOf(end);
+  if (startIndex === -1 && endIndex === -1) {
+    if (normalizeContent(previous) === artifact.content) {
+      return { kind: "merged", content: managedSection(artifact) };
+    }
+    if (previous.includes("<!-- aiyoke:generated -->")) {
+      return {
+        kind: "conflict",
+        reason: "A legacy aiyoke marker exists in modified content; migrate it before applying."
+      };
+    }
+    const separator =
+      previous.length === 0 || previous.endsWith("\n\n")
+        ? ""
+        : previous.endsWith("\n")
+          ? "\n"
+          : "\n\n";
+    return { kind: "merged", content: `${previous}${separator}${managedSection(artifact)}` };
+  }
+
+  const hasAmbiguousMarkers =
+    startIndex === -1 ||
+    endIndex === -1 ||
+    endIndex < startIndex ||
+    previous.indexOf(start, startIndex + start.length) !== -1 ||
+    previous.indexOf(end, endIndex + end.length) !== -1;
+  if (hasAmbiguousMarkers) {
+    return {
+      kind: "conflict",
+      reason: "Managed-section markers are missing, duplicated, or out of order."
+    };
+  }
+
+  let suffixStart = endIndex + end.length;
+  if (previous.startsWith("\r\n", suffixStart)) suffixStart += 2;
+  else if (previous.startsWith("\n", suffixStart)) suffixStart += 1;
+  return {
+    kind: "merged",
+    content: `${previous.slice(0, startIndex)}${managedSection(artifact)}${previous.slice(suffixStart)}`
   };
 }
 
@@ -247,20 +328,40 @@ export class HarnessCompiler {
         (intent) =>
           intent.content !== first.content ||
           intent.executable !== first.executable ||
-          intent.ownership !== first.ownership
+          intent.ownership !== first.ownership ||
+          !sameManagedMarkers(intent, first)
       );
       if (incompatible) {
         operations.push({
           kind: "conflict",
           path,
           reason: `Multiple extensions produced incompatible content for ${path}.`,
-          sources: [...new Set(intents.map((intent) => intent.source))].sort()
+          sources: [...new Set(intents.map((intent) => intent.source))].sort(compareCodePoints)
         });
         continue;
       }
 
       const previous = await this.workspace.read(path);
-      if (previous === undefined) {
+      if (first.ownership === "managed-section") {
+        const merged = mergeManagedSection(previous ?? "", first);
+        if (merged.kind === "conflict") {
+          operations.push({
+            kind: "conflict",
+            path,
+            reason: `${path}: ${merged.reason}`,
+            sources: [...new Set(intents.map((intent) => intent.source))].sort(compareCodePoints)
+          });
+          continue;
+        }
+        const effective = { ...first, content: merged.content };
+        if (previous === undefined) {
+          operations.push({ kind: "create", artifact: effective });
+        } else if (previous === effective.content) {
+          operations.push({ kind: "unchanged", artifact: effective });
+        } else {
+          operations.push({ kind: "update", artifact: effective, previous });
+        }
+      } else if (previous === undefined) {
         operations.push({ kind: "create", artifact: first });
       } else if (normalizeContent(previous) === first.content) {
         operations.push({ kind: "unchanged", artifact: first });
@@ -271,7 +372,7 @@ export class HarnessCompiler {
           kind: "conflict",
           path,
           reason: `${path} is ${first.ownership}; aiyoke will not replace existing content.`,
-          sources: [...new Set(intents.map((intent) => intent.source))].sort()
+          sources: [...new Set(intents.map((intent) => intent.source))].sort(compareCodePoints)
         });
       }
     }

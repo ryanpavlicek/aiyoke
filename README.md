@@ -32,9 +32,18 @@ node dist/cli.js apply
 node dist/cli.js check
 ```
 
+Initialization enables all supported targets by default. Select a smaller native
+surface when needed:
+
+```sh
+node dist/cli.js init --targets claude-code,codex,openrouter
+```
+
 `plan` is read-only. `apply` uses same-directory atomic replacement, rejects unsafe paths and
 symlink traversal, and produces `.aiyoke/lock.json` for deterministic drift checks. Repeating
-`apply` against an unchanged specification performs no writes.
+`apply` against an unchanged specification performs no writes. Root instruction files use
+explicit managed-section boundaries, so existing user-authored content remains outside aiyoke's
+write scope.
 
 ## Development
 

@@ -3,7 +3,8 @@ import type {
   ArtifactOwnership,
   HarnessModule,
   JsonObject,
-  JsonValue
+  JsonValue,
+  ManagedSectionMarkers
 } from "../../core/index.js";
 import { compareCodePoints, safeRelativePath } from "../../core/index.js";
 
@@ -63,10 +64,21 @@ export function sanitizeObject(value: JsonObject): JsonObject {
   return sanitizeJson(value) as JsonObject;
 }
 
-export interface ArtifactOptions {
-  readonly ownership?: ArtifactOwnership;
-  readonly executable?: boolean;
-}
+const DEFAULT_MANAGED_MARKERS: ManagedSectionMarkers = {
+  start: "<!-- aiyoke:managed:start -->",
+  end: "<!-- aiyoke:managed:end -->"
+};
+
+export type ArtifactOptions =
+  | {
+      readonly ownership?: Exclude<ArtifactOwnership, "managed-section">;
+      readonly executable?: boolean;
+    }
+  | {
+      readonly ownership: "managed-section";
+      readonly executable?: boolean;
+      readonly markers?: ManagedSectionMarkers;
+    };
 
 export function artifact(
   path: string,
@@ -74,13 +86,20 @@ export function artifact(
   source: string,
   options: ArtifactOptions = {}
 ): ArtifactIntent {
-  return {
+  const base = {
     path: safeRelativePath(path),
     content: content.endsWith("\n") ? content : `${content}\n`,
-    ownership: options.ownership ?? "generated",
     source,
     executable: options.executable ?? false
   };
+  if (options.ownership === "managed-section") {
+    return {
+      ...base,
+      ownership: "managed-section",
+      markers: options.markers ?? DEFAULT_MANAGED_MARKERS
+    };
+  }
+  return { ...base, ownership: options.ownership ?? "generated" };
 }
 
 function markdownLines(module: HarnessModule): string[] {

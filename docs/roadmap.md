@@ -8,7 +8,8 @@ release are intentionally omitted.
 
 - Canonical harness schema with explicit target and lifecycle variants.
 - Deterministic no-write planning, atomic/idempotent application, lock manifests,
-  path/ownership checks, drift checking, and diagnostics.
+  path/ownership checks, bounded managed-section merging, stale-plan protection,
+  drift checking, and diagnostics.
 - Registered target adapters for Claude Code, Codex, ChatGPT, Grok Build,
   xAI/Grok API, and OpenRouter.
 - First-party language extensions for Python, TypeScript, JavaScript, Rust, and
@@ -18,8 +19,8 @@ release are intentionally omitted.
 
 ## 0.2 — composition hardening
 
-- Add marker-aware managed-section merging while preserving user-owned content.
-- Expand golden fixtures across representative polyglot monorepos.
+- Expand golden fixtures from representative projects into polyglot monorepos.
+- Add interactive configuration editing and schema migration commands.
 - Add extension compatibility fixtures and schema migration tooling.
 
 ## 0.3 — extension ecosystem

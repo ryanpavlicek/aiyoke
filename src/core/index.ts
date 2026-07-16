@@ -18,6 +18,7 @@ export type {
   HookDefinition,
   InferenceGatewayTarget,
   InstructionBlock,
+  ManagedSectionMarkers,
   McpServerDefinition,
   PlanOperation,
   ProjectArchitecture,

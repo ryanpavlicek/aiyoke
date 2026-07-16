@@ -28,6 +28,7 @@ import { createDefaultRegistry } from "./registry.js";
 export interface InitializeOptions {
   readonly languages?: readonly ExtensionId[];
   readonly frameworks?: readonly ExtensionId[];
+  readonly targetAdapters?: readonly ExtensionId[];
   readonly force?: boolean;
 }
 
@@ -100,6 +101,22 @@ export class AiyokeEngine {
     const detectedFrameworks = detected
       .filter((item) => item.descriptor.kind === "framework" && item.detection.confidence >= 0.75)
       .map((item) => item.descriptor.id);
+    const selectedTargets =
+      options.targetAdapters === undefined
+        ? defaults.targets
+        : options.targetAdapters.map((adapter) => {
+            const target = defaults.targets.find((candidate) => candidate.adapter === adapter);
+            if (target === undefined) {
+              throw new AiyokeError(
+                "INVALID_SPEC",
+                `Target ${adapter} does not have a built-in initialization profile.`
+              );
+            }
+            return target;
+          });
+    if (new Set(selectedTargets.map((target) => target.adapter)).size !== selectedTargets.length) {
+      throw new AiyokeError("INVALID_SPEC", "Initialization targets cannot contain duplicates.");
+    }
     const spec: HarnessSpec = {
       ...defaults,
       stack: {
@@ -107,7 +124,8 @@ export class AiyokeEngine {
           options.languages ??
           (detectedLanguages.length > 0 ? detectedLanguages : defaults.stack.languages),
         frameworks: options.frameworks ?? detectedFrameworks
-      }
+      },
+      targets: selectedTargets
     };
     await this.#workspace.writeAtomic("aiyoke.yaml", stringifyHarnessSpec(spec), false);
     return { path: "aiyoke.yaml", created: true, spec };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HarnessCompiler, type HashPort, type WorkspacePort } from "../../src/application/index.js";
 import {
+  type ArtifactIntent,
   type ArtifactOwnership,
   extensionId,
   type HarnessSpec,
@@ -82,13 +83,23 @@ function compiler(workspace: MemoryWorkspace, options: FakeTargetOptions = {}): 
     descriptor,
     surface: options.surface ?? "coding-agent",
     async render() {
-      const first = {
+      const base = {
         path: options.path ?? "AGENT.md",
         content: "generated\r\n",
-        ownership: options.ownership ?? "generated",
         source: "fake",
         executable: false
       };
+      const first: ArtifactIntent =
+        options.ownership === "managed-section"
+          ? {
+              ...base,
+              ownership: "managed-section",
+              markers: {
+                start: "<!-- aiyoke:managed:start -->",
+                end: "<!-- aiyoke:managed:end -->"
+              }
+            }
+          : { ...base, ownership: options.ownership ?? "generated" };
       return options.conflicting
         ? [first, { ...first, content: "different", source: "other" }]
         : [first];
@@ -143,7 +154,7 @@ describe("HarnessCompiler", () => {
     expect(workspace.values.get("AGENT.md")).toBe("concurrent user content\n");
   });
 
-  it("updates generated artifacts and protects non-generated ownership", async () => {
+  it("updates generated artifacts and protects user-owned content", async () => {
     const generatedWorkspace = new MemoryWorkspace();
     generatedWorkspace.values.set("AGENT.md", "old\n");
     const generated = compiler(generatedWorkspace);
@@ -156,13 +167,62 @@ describe("HarnessCompiler", () => {
     );
     expect((await generated.apply(updatePlan)).changedPaths).toContain("AGENT.md");
 
-    const managedWorkspace = new MemoryWorkspace();
-    managedWorkspace.values.set("AGENT.md", "user content\n");
-    const managedPlan = await compiler(managedWorkspace, { ownership: "managed-section" }).plan(
-      spec()
-    );
-    expect(managedPlan.operations).toContainEqual(
+    const userWorkspace = new MemoryWorkspace();
+    userWorkspace.values.set("AGENT.md", "user content\n");
+    const userPlan = await compiler(userWorkspace, { ownership: "user-owned" }).plan(spec());
+    expect(userPlan.operations).toContainEqual(
       expect.objectContaining({ kind: "conflict", path: "AGENT.md" })
+    );
+  });
+
+  it("appends and updates a bounded managed section without changing user content", async () => {
+    const workspace = new MemoryWorkspace();
+    workspace.values.set("AGENT.md", "# Team instructions\n\nKeep this paragraph.\n");
+    const harness = compiler(workspace, { ownership: "managed-section" });
+    const first = await harness.plan(spec());
+    expect(first.operations).toContainEqual(
+      expect.objectContaining({
+        kind: "update",
+        artifact: expect.objectContaining({ path: "AGENT.md" })
+      })
+    );
+    await harness.apply(first);
+    expect(workspace.values.get("AGENT.md")).toBe(
+      "# Team instructions\n\nKeep this paragraph.\n\n<!-- aiyoke:managed:start -->\ngenerated\n<!-- aiyoke:managed:end -->\n"
+    );
+    expect(
+      (await harness.plan(spec())).operations.every((operation) => operation.kind === "unchanged")
+    ).toBe(true);
+
+    workspace.values.set(
+      "AGENT.md",
+      "before\n\n<!-- aiyoke:managed:start -->\nold\n<!-- aiyoke:managed:end -->\n\nafter\n"
+    );
+    await harness.apply(await harness.plan(spec()));
+    expect(workspace.values.get("AGENT.md")).toBe(
+      "before\n\n<!-- aiyoke:managed:start -->\ngenerated\n<!-- aiyoke:managed:end -->\n\nafter\n"
+    );
+  });
+
+  it("conflicts on ambiguous or modified legacy managed markers", async () => {
+    const workspace = new MemoryWorkspace();
+    const harness = compiler(workspace, { ownership: "managed-section" });
+    workspace.values.set("AGENT.md", "<!-- aiyoke:managed:start -->\nmissing end\n");
+    expect(await harness.plan(spec())).toEqual(
+      expect.objectContaining({
+        operations: expect.arrayContaining([
+          expect.objectContaining({ kind: "conflict", path: "AGENT.md" })
+        ])
+      })
+    );
+
+    workspace.values.set("AGENT.md", "<!-- aiyoke:generated -->\nmodified\n");
+    expect(await harness.plan(spec())).toEqual(
+      expect.objectContaining({
+        operations: expect.arrayContaining([
+          expect.objectContaining({ kind: "conflict", path: "AGENT.md" })
+        ])
+      })
     );
   });
 
