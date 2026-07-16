@@ -166,4 +166,30 @@ describe("runtime template extensions", () => {
     breaker.success();
     expect(breaker.allow(103)).toBe(true);
   });
+
+  it("keeps JavaScript runtime behavior in lockstep with the typed reference", async () => {
+    const runtimes = await loadedRuntimes();
+    const render = async (language: string) => {
+      const runtime = runtimes.find((candidate) => candidate.descriptor.language === language);
+      if (runtime === undefined) throw new Error(`${language} runtime missing`);
+      const spec = defaultHarnessSpec("runtime-parity");
+      if (spec.runtime.kind !== "enabled" || spec.composition.kind !== "single") {
+        throw new Error("default runtime shape changed");
+      }
+      return runtime.render({
+        spec,
+        workspace,
+        runtime: spec.runtime,
+        scope: { kind: "project", stack: spec.composition.stack }
+      });
+    };
+    const typeScript = await render("typescript");
+    const javaScript = await render("javascript");
+    for (const artifactIndex of [0, 1]) {
+      const transpiled = ts.transpileModule(typeScript[artifactIndex]?.content ?? "", {
+        compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext }
+      }).outputText;
+      expect(javaScript[artifactIndex]?.content).toBe(transpiled);
+    }
+  });
 });
