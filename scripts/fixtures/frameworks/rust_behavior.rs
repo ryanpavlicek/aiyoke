@@ -103,17 +103,12 @@ async fn axum_carries_auth_and_cancellation_options() {
     });
     let mut headers = HeaderMap::new();
     headers.insert("authorization", HeaderValue::from_static("Bearer fixture"));
-    let response = aiyoke_axum_handler(
-        State(state.clone()),
-        headers.clone(),
-        Json("ok".to_owned()),
-    )
-    .await;
+    let response =
+        aiyoke_axum_handler(State(state.clone()), headers.clone(), Json("ok".to_owned())).await;
     assert_eq!(response.status(), StatusCode::OK);
 
     headers.insert("x-cancel", HeaderValue::from_static("1"));
-    let cancelled =
-        aiyoke_axum_handler(State(state), headers, Json("cancel".to_owned())).await;
+    let cancelled = aiyoke_axum_handler(State(state), headers, Json("cancel".to_owned())).await;
     assert_eq!(cancelled.status().as_u16(), 499);
 }
 
@@ -136,13 +131,10 @@ async fn actix_carries_auth_and_cancellation_options() {
     let incoming = test::TestRequest::default()
         .insert_header(("authorization", "Bearer fixture"))
         .to_http_request();
-    let response = aiyoke_actix_handler(
-        state.clone(),
-        incoming.clone(),
-        web::Json("ok".to_owned()),
-    )
-    .await
-    .respond_to(&incoming);
+    let response =
+        aiyoke_actix_handler(state.clone(), incoming.clone(), web::Json("ok".to_owned()))
+            .await
+            .respond_to(&incoming);
     assert_eq!(response.status(), actix_web::http::StatusCode::OK);
 
     let cancelled_request = test::TestRequest::default()

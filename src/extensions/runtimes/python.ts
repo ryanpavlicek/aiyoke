@@ -334,9 +334,19 @@ class HarnessRuntime:
             return await self._finish_failure(request, budget_failure)
 
         if self.guards is not None:
-            decision = await self.guards.check(
-                GuardContext(GuardStage.INPUT, request, request.input)
-            )
+            try:
+                decision = await self.guards.check(
+                    GuardContext(GuardStage.INPUT, request, request.input)
+                )
+            except Exception:
+                return await self._finish_failure(
+                    request,
+                    ModelFailure(
+                        FailureKind.GUARD_REJECTED,
+                        "Input guard evaluation failed.",
+                        False,
+                    ),
+                )
             if isinstance(decision, GuardRejected):
                 return await self._finish_failure(
                     request,
@@ -344,9 +354,12 @@ class HarnessRuntime:
                 )
 
         if execute_options.approval_reason is not None:
-            approved = self.approval is not None and await self.approval.approve(
-                request, execute_options.approval_reason
-            )
+            try:
+                approved = self.approval is not None and await self.approval.approve(
+                    request, execute_options.approval_reason
+                )
+            except Exception:
+                approved = False
             if not approved:
                 return await self._finish_failure(
                     request,
@@ -358,15 +371,19 @@ class HarnessRuntime:
                 )
 
         if execute_options.cache_key is not None and self.cache is not None:
-            cached = await self.cache.get(execute_options.cache_key)
-            if cached is not None:
-                await self._emit("cache-hit", request)
-                result = ModelSuccess(
-                    cached,
-                    Usage(input_tokens=0, output_tokens=0, estimated_cost_usd=0),
-                )
-                await self._record(request, result)
-                return result
+            try:
+                cached = await self.cache.get(execute_options.cache_key)
+                if cached is not None:
+                    await self._emit("cache-hit", request)
+                    result = ModelSuccess(
+                        cached,
+                        Usage(input_tokens=0, output_tokens=0, estimated_cost_usd=0),
+                    )
+                    await self._record(request, result)
+                    return result
+                await self._emit("cache-miss", request)
+            except Exception:
+                await self._emit("cache-read-failed", request)
 
         routes = list(dict.fromkeys([request.route, *self.options.fallback_routes]))
         final_failure = ModelFailure(
@@ -405,9 +422,19 @@ class HarnessRuntime:
                         final_failure = resolved
                         break
                     if self.guards is not None:
-                        decision = await self.guards.check(
-                            GuardContext(GuardStage.OUTPUT, request, resolved)
-                        )
+                        try:
+                            decision = await self.guards.check(
+                                GuardContext(GuardStage.OUTPUT, request, resolved)
+                            )
+                        except Exception:
+                            return await self._finish_failure(
+                                request,
+                                ModelFailure(
+                                    FailureKind.GUARD_REJECTED,
+                                    "Output guard evaluation failed.",
+                                    False,
+                                ),
+                            )
                         if isinstance(decision, GuardRejected):
                             return await self._finish_failure(
                                 request,
@@ -429,7 +456,11 @@ class HarnessRuntime:
                     circuit.success()
                     success = ModelSuccess(resolved, result.usage)
                     if execute_options.cache_key is not None and self.cache is not None:
-                        await self.cache.set(execute_options.cache_key, resolved)
+                        try:
+                            await self.cache.set(execute_options.cache_key, resolved)
+                            await self._emit("cache-stored", request)
+                        except Exception:
+                            await self._emit("cache-write-failed", request)
                     await self._emit(
                         "request-succeeded",
                         request,
@@ -751,6 +782,40 @@ class RuntimeFacadeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(calls, 3)
         self.assertEqual(maximum_active, 1)
+
+    async def test_cache_and_evaluation_failures_are_contained_and_observable(self) -> None:
+        events = []
+
+        class Adapter:
+            async def invoke(self, request):
+                return ModelSuccess("fresh", Usage(1, 1, 0))
+
+        class Cache:
+            async def get(self, key):
+                raise RuntimeError("cache unavailable")
+
+            async def set(self, key, value):
+                raise RuntimeError("cache unavailable")
+
+        class Evaluation:
+            async def record(self, request, result):
+                raise RuntimeError("evaluation unavailable")
+
+        class Events:
+            async def emit(self, event):
+                events.append(event)
+
+        runtime = HarnessRuntime(
+            self.options,
+            AdapterRegistry().register("primary", Adapter()),
+            cache=Cache(),
+            evaluation=Evaluation(),
+            events=Events(),
+        )
+        result = await runtime.execute(self.request, ExecuteOptions(cache_key="one"))
+        self.assertIsInstance(result, ModelSuccess)
+        self.assertTrue(any(event["type"] == "cache-read-failed" for event in events))
+        self.assertTrue(any(event["type"] == "cache-write-failed" for event in events))
 
 
 if __name__ == "__main__":

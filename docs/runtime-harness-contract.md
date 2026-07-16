@@ -38,6 +38,11 @@ The port is part of the generated source contract and is exercised with an
 in-memory fake or reference adapter in native tests. No capability is claimed on
 the strength of prose alone.
 
+Configured caches emit redacted hit, miss, stored, read-failure, and write-failure
+events. Cache and evaluation storage failures degrade without replacing a valid
+model result. Guard and approval port failures fail closed with stable policy
+failure categories; neither path includes backend error text in lifecycle events.
+
 ## 1. Reliability and robustness
 
 Generated runtime templates must provide:

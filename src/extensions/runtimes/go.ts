@@ -430,11 +430,15 @@ func (runtime *HarnessRuntime) executeWithCapacity(
 	}
 	if executeOptions.CacheKey != "" && runtime.deps.Cache != nil {
 		cached, found, err := runtime.deps.Cache.Get(ctx, executeOptions.CacheKey)
-		if err == nil && found {
+		if err != nil {
+			runtime.emit(ctx, "cache-read-failed", request, nil)
+		} else if found {
 			runtime.emit(ctx, "cache-hit", request, nil)
 			result := ModelSuccess{Value: cached, Usage: Usage{}}
 			runtime.record(ctx, request, result)
 			return result
+		} else {
+			runtime.emit(ctx, "cache-miss", request, nil)
 		}
 	}
 
@@ -501,7 +505,11 @@ func (runtime *HarnessRuntime) executeWithCapacity(
 				circuit.Success()
 				completed := ModelSuccess{Value: value, Usage: success.Usage}
 				if executeOptions.CacheKey != "" && runtime.deps.Cache != nil {
-					_ = runtime.deps.Cache.Set(ctx, executeOptions.CacheKey, value)
+					if err := runtime.deps.Cache.Set(ctx, executeOptions.CacheKey, value); err != nil {
+						runtime.emit(ctx, "cache-write-failed", request, nil)
+					} else {
+						runtime.emit(ctx, "cache-stored", request, nil)
+					}
 				}
 				runtime.emit(ctx, "request-succeeded", request, map[string]any{
 					"usage":      success.Usage,
@@ -687,6 +695,7 @@ const TEST_SOURCE = `package aiyokeruntime
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -954,6 +963,43 @@ func TestRuntimeBatchConcurrencyIsBounded(t *testing.T) {
 	}
 	if adapter.maximum != 1 {
 		t.Fatalf("maximum concurrency was %d", adapter.maximum)
+	}
+}
+
+type failingCache struct{}
+
+func (failingCache) Get(context.Context, string) (any, bool, error) {
+	return nil, false, errors.New("cache unavailable")
+}
+
+func (failingCache) Set(context.Context, string, any) error {
+	return errors.New("cache unavailable")
+}
+
+func TestCacheFailuresAreContainedAndObservable(t *testing.T) {
+	registry := NewAdapterRegistry()
+	if err := registry.Register("primary", fallbackAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	events := &memoryEvents{}
+	runtime, err := NewHarnessRuntime(testOptions(), RuntimeDependencies{
+		Adapters: registry, Cache: failingCache{}, Events: events,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := runtime.Execute(context.Background(), testRequest("cache"), ExecuteOptions{CacheKey: "one"})
+	if _, ok := result.(ModelSuccess); !ok {
+		t.Fatalf("cache failure corrupted inference: %#v", result)
+	}
+	seenReadFailure := false
+	seenWriteFailure := false
+	for _, event := range events.events {
+		seenReadFailure = seenReadFailure || event["type"] == "cache-read-failed"
+		seenWriteFailure = seenWriteFailure || event["type"] == "cache-write-failed"
+	}
+	if !seenReadFailure || !seenWriteFailure {
+		t.Fatalf("cache failures were not observable: %#v", events.events)
 	}
 }
 `;

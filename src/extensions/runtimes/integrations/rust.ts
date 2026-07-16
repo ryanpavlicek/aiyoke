@@ -1,8 +1,6 @@
 import type { FrameworkIntegrationDefinition } from "../shared.js";
 
-const axum = `use crate::runtime::{
-    ExecuteOptions, FailureKind, HarnessRuntime, ModelRequest, ModelResult,
-};
+const axum = `use crate::runtime::{ExecuteOptions, FailureKind, HarnessRuntime, ModelRequest, ModelResult};
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -13,12 +11,8 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-pub type AxumRequestFactory<I, O> = dyn Fn(
-        I,
-        &HeaderMap,
-    ) -> Result<(ModelRequest<I>, ExecuteOptions<O>), String>
-    + Send
-    + Sync;
+pub type AxumRequestFactory<I, O> =
+    dyn Fn(I, &HeaderMap) -> Result<(ModelRequest<I>, ExecuteOptions<O>), String> + Send + Sync;
 
 pub struct AiyokeAxumState<I, O> {
     pub runtime: Arc<HarnessRuntime<I, O>>,
@@ -50,8 +44,7 @@ where
         Err(message) => return (StatusCode::BAD_REQUEST, message).into_response(),
     };
     let runtime = state.runtime.clone();
-    match tokio::task::spawn_blocking(move || runtime.execute(request, &execute_options)).await
-    {
+    match tokio::task::spawn_blocking(move || runtime.execute(request, &execute_options)).await {
         Ok(ModelResult::Success { value, usage }) => Json(json!({
             "data": value,
             "usage": {
@@ -71,20 +64,14 @@ where
 }
 `;
 
-const actix = `use crate::runtime::{
-    ExecuteOptions, FailureKind, HarnessRuntime, ModelRequest, ModelResult,
-};
+const actix = `use crate::runtime::{ExecuteOptions, FailureKind, HarnessRuntime, ModelRequest, ModelResult};
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-pub type ActixRequestFactory<I, O> = dyn Fn(
-        I,
-        &HttpRequest,
-    ) -> Result<(ModelRequest<I>, ExecuteOptions<O>), String>
-    + Send
-    + Sync;
+pub type ActixRequestFactory<I, O> =
+    dyn Fn(I, &HttpRequest) -> Result<(ModelRequest<I>, ExecuteOptions<O>), String> + Send + Sync;
 
 pub struct AiyokeActixState<I, O> {
     pub runtime: Arc<HarnessRuntime<I, O>>,
@@ -115,10 +102,11 @@ where
     I: Clone + DeserializeOwned + Send + Sync + 'static,
     O: Clone + Serialize + Send + Sync + 'static,
 {
-    let (model_request, execute_options) = match (state.request_factory)(body.into_inner(), &request) {
-        Ok(request) => request,
-        Err(message) => return HttpResponse::BadRequest().json(json!({ "error": message })),
-    };
+    let (model_request, execute_options) =
+        match (state.request_factory)(body.into_inner(), &request) {
+            Ok(request) => request,
+            Err(message) => return HttpResponse::BadRequest().json(json!({ "error": message })),
+        };
     let runtime = state.runtime.clone();
     match web::block(move || runtime.execute(model_request, &execute_options)).await {
         Ok(ModelResult::Success { value, usage }) => HttpResponse::Ok().json(json!({
@@ -129,8 +117,10 @@ where
                 "estimatedCostUsd": usage.estimated_cost_usd
             }
         })),
-        Ok(ModelResult::Failure(failure)) => HttpResponse::build(actix_failure_status(failure.kind))
-            .json(json!({ "error": { "message": failure.message } })),
+        Ok(ModelResult::Failure(failure)) => {
+            HttpResponse::build(actix_failure_status(failure.kind))
+                .json(json!({ "error": { "message": failure.message } }))
+        }
         Err(_) => HttpResponse::BadGateway().finish(),
     }
 }

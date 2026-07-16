@@ -173,11 +173,21 @@ export class HarnessRuntime {
             const budgetFailure = enforceBudget(request, request.inputTokens, this.options.maxInputTokens, this.options.maxOutputTokens);
             if (budgetFailure !== undefined)
                 return this.#finishFailure(request, budgetFailure);
-            const inputDecision = await this.dependencies.guards?.check({
-                stage: "input",
-                request,
-                value: request.input
-            });
+            let inputDecision;
+            try {
+                inputDecision = await this.dependencies.guards?.check({
+                    stage: "input",
+                    request,
+                    value: request.input
+                });
+            }
+            catch {
+                return this.#finishFailure(request, {
+                    kind: "guard-rejected",
+                    message: "Input guard evaluation failed.",
+                    retryable: false
+                });
+            }
             if (inputDecision?.allowed === false) {
                 return this.#finishFailure(request, {
                     kind: "guard-rejected",
@@ -186,7 +196,14 @@ export class HarnessRuntime {
                 });
             }
             if (executeOptions.approvalReason !== undefined) {
-                const approved = await this.dependencies.approval?.approve(request, executeOptions.approvalReason);
+                let approved = false;
+                try {
+                    approved =
+                        (await this.dependencies.approval?.approve(request, executeOptions.approvalReason)) === true;
+                }
+                catch {
+                    approved = false;
+                }
                 if (approved !== true) {
                     return this.#finishFailure(request, {
                         kind: "approval-required",
@@ -196,16 +213,22 @@ export class HarnessRuntime {
                 }
             }
             if (executeOptions.cacheKey !== undefined && this.dependencies.cache !== undefined) {
-                const cached = await this.dependencies.cache.get(executeOptions.cacheKey);
-                if (cached !== undefined) {
-                    await this.#emit("cache-hit", request);
-                    const result = {
-                        kind: "success",
-                        value: cached,
-                        usage: { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0 }
-                    };
-                    await this.#record(request, result);
-                    return result;
+                try {
+                    const cached = await this.dependencies.cache.get(executeOptions.cacheKey);
+                    if (cached !== undefined) {
+                        await this.#emit("cache-hit", request);
+                        const result = {
+                            kind: "success",
+                            value: cached,
+                            usage: { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0 }
+                        };
+                        await this.#record(request, result);
+                        return result;
+                    }
+                    await this.#emit("cache-miss", request);
+                }
+                catch {
+                    await this.#emit("cache-read-failed", request);
                 }
             }
             const routes = [request.route, ...this.options.fallbackRoutes].filter((route, index, all) => all.indexOf(route) === index);
@@ -251,11 +274,21 @@ export class HarnessRuntime {
                             finalFailure = resolved.failure;
                             break;
                         }
-                        const outputDecision = await this.dependencies.guards?.check({
-                            stage: "output",
-                            request,
-                            value: resolved.value
-                        });
+                        let outputDecision;
+                        try {
+                            outputDecision = await this.dependencies.guards?.check({
+                                stage: "output",
+                                request,
+                                value: resolved.value
+                            });
+                        }
+                        catch {
+                            return this.#finishFailure(request, {
+                                kind: "guard-rejected",
+                                message: "Output guard evaluation failed.",
+                                retryable: false
+                            });
+                        }
                         if (outputDecision?.allowed === false) {
                             return this.#finishFailure(request, {
                                 kind: "guard-rejected",
@@ -277,8 +310,14 @@ export class HarnessRuntime {
                             value: resolved.value,
                             usage: result.usage
                         };
-                        if (executeOptions.cacheKey !== undefined) {
-                            await this.dependencies.cache?.set(executeOptions.cacheKey, resolved.value);
+                        if (executeOptions.cacheKey !== undefined && this.dependencies.cache !== undefined) {
+                            try {
+                                await this.dependencies.cache.set(executeOptions.cacheKey, resolved.value);
+                                await this.#emit("cache-stored", request);
+                            }
+                            catch {
+                                await this.#emit("cache-write-failed", request);
+                            }
                         }
                         await this.#emit("request-succeeded", request, {
                             usage: result.usage,
@@ -305,7 +344,10 @@ export class HarnessRuntime {
                         });
                     }
                 }
-                if (["cancelled", "guard-rejected", "approval-required", "budget-exhausted"].includes(finalFailure.kind)) {
+                if (finalFailure.kind === "cancelled" ||
+                    finalFailure.kind === "guard-rejected" ||
+                    finalFailure.kind === "approval-required" ||
+                    finalFailure.kind === "budget-exhausted") {
                     return this.#finishFailure(request, finalFailure);
                 }
             }
@@ -587,6 +629,38 @@ test("runtime cache and batch concurrency are bounded", async () => {
     await runtime.executeBatch([request, { ...request, id: "request-2" }]);
     assert.equal(calls, 3);
     assert.equal(maximumActive, 1);
+});
+test("cache and evaluation boundary failures are contained and observable", async () => {
+    const events = [];
+    const runtime = new HarnessRuntime(options, {
+        adapters: new AdapterRegistry().register("primary", {
+            async invoke() {
+                return {
+                    kind: "success",
+                    value: "fresh",
+                    usage: { inputTokens: 1, outputTokens: 1, estimatedCostUsd: 0 }
+                };
+            }
+        }),
+        cache: {
+            get: async () => {
+                throw new Error("cache unavailable");
+            },
+            set: async () => {
+                throw new Error("cache unavailable");
+            }
+        },
+        evaluation: {
+            record: async () => {
+                throw new Error("evaluation unavailable");
+            }
+        },
+        events: { emit: async (event) => void events.push(event) }
+    });
+    const result = await runtime.execute(request, { cacheKey: "one" });
+    assert.equal(result.kind, "success");
+    assert.ok(events.some((event) => event.type === "cache-read-failed"));
+    assert.ok(events.some((event) => event.type === "cache-write-failed"));
 });
 `;
 

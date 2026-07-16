@@ -73,6 +73,10 @@ pub enum RuntimeEventKind {
     RetryScheduled { delay: Duration, attempt: u32 },
     FallbackSelected { route: String },
     CacheHit,
+    CacheMiss,
+    CacheReadFailed,
+    CacheStored,
+    CacheWriteFailed,
     RequestSucceeded { usage: Usage, latency: Duration },
     RequestFailed { failure_kind: FailureKind },
 }
@@ -564,14 +568,18 @@ where
             }
         }
         if let (Some(cache_key), Some(cache)) = (&execute_options.cache_key, &self.ports.cache) {
-            if let Ok(Some(cached)) = cache.get(cache_key) {
-                self.emit(&request, RuntimeEventKind::CacheHit);
-                let result = ModelResult::Success {
-                    value: cached,
-                    usage: Usage::default(),
-                };
-                self.record(&request, &result);
-                return result;
+            match cache.get(cache_key) {
+                Ok(Some(cached)) => {
+                    self.emit(&request, RuntimeEventKind::CacheHit);
+                    let result = ModelResult::Success {
+                        value: cached,
+                        usage: Usage::default(),
+                    };
+                    self.record(&request, &result);
+                    return result;
+                }
+                Ok(None) => self.emit(&request, RuntimeEventKind::CacheMiss),
+                Err(_) => self.emit(&request, RuntimeEventKind::CacheReadFailed),
             }
         }
 
@@ -669,7 +677,14 @@ where
                         if let (Some(cache_key), Some(cache)) =
                             (&execute_options.cache_key, &self.ports.cache)
                         {
-                            let _ = cache.set(cache_key, &value);
+                            self.emit(
+                                &request,
+                                if cache.set(cache_key, &value).is_ok() {
+                                    RuntimeEventKind::CacheStored
+                                } else {
+                                    RuntimeEventKind::CacheWriteFailed
+                                },
+                            );
                         }
                         let result = ModelResult::Success { value, usage };
                         self.emit(
@@ -1199,7 +1214,9 @@ impl ModelAdapter<(), String> for TerminalAdapter {
 #[test]
 fn terminal_policy_failures_never_fall_through_to_fallbacks() {
     let mut adapters = AdapterRegistry::new();
-    adapters.register("primary", Arc::new(TerminalAdapter)).unwrap();
+    adapters
+        .register("primary", Arc::new(TerminalAdapter))
+        .unwrap();
     let runtime = HarnessRuntime::new(test_options(), adapters, RuntimePorts::default()).unwrap();
     let result = runtime.execute(test_request("terminal"), &ExecuteOptions::default());
     assert!(matches!(
@@ -1311,6 +1328,52 @@ fn runtime_batch_concurrency_is_bounded() {
         .unwrap();
     assert_eq!(results.len(), 3);
     assert_eq!(adapter.maximum.load(Ordering::SeqCst), 1);
+}
+
+struct FailingCache;
+
+impl runtime::CachePort<String> for FailingCache {
+    fn get(&self, _key: &str) -> Result<Option<String>, String> {
+        Err("cache unavailable".to_owned())
+    }
+
+    fn set(&self, _key: &str, _value: &String) -> Result<(), String> {
+        Err("cache unavailable".to_owned())
+    }
+}
+
+#[test]
+fn cache_failures_are_contained_and_observable() {
+    let mut adapters = AdapterRegistry::new();
+    adapters
+        .register("primary", Arc::new(FallbackAdapter))
+        .unwrap();
+    let events = Arc::new(MemoryEvents::default());
+    let runtime = HarnessRuntime::new(
+        test_options(),
+        adapters,
+        RuntimePorts {
+            events: Some(events.clone()),
+            cache: Some(Arc::new(FailingCache)),
+            ..RuntimePorts::default()
+        },
+    )
+    .unwrap();
+    let result = runtime.execute(
+        test_request("cache"),
+        &ExecuteOptions {
+            cache_key: Some("one".to_owned()),
+            ..ExecuteOptions::default()
+        },
+    );
+    assert!(matches!(result, ModelResult::Success { .. }));
+    let captured = events.events.lock().unwrap();
+    assert!(captured
+        .iter()
+        .any(|event| matches!(event.kind, RuntimeEventKind::CacheReadFailed)));
+    assert!(captured
+        .iter()
+        .any(|event| matches!(event.kind, RuntimeEventKind::CacheWriteFailed)));
 }
 `;
 

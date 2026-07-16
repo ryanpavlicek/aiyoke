@@ -209,11 +209,11 @@ path = "lib.rs"
   );
   await writeFile(
     join(rust, "lib.rs"),
-    `pub mod runtime;
-pub mod actix_aiyoke;
+    `pub mod actix_aiyoke;
 pub mod axum_aiyoke;
 #[cfg(test)]
 mod framework_behavior;
+pub mod runtime;
 `,
     "utf8"
   );
