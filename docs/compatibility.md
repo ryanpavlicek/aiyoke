@@ -29,6 +29,13 @@ artifacts, and participate in drift verification.
 Framework detection requires dependency or distinctive marker evidence. A generic
 manifest alone does not select a framework.
 
+When runtime generation is enabled, the selected stack also resolves one
+registered application-runtime template for each language. Current generated
+source uses only that language's standard library and includes provider-neutral
+ports plus retry/backoff, budget, and circuit-breaker primitives. Native compiler,
+formatter, and adversarial conformance jobs are required before 0.3 support is
+considered final.
+
 ## Dogfood acceptance matrix
 
 CI runs the full six-target lifecycle against five representative fixtures:

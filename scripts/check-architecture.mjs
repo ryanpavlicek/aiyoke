@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as ts from "typescript";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
-const EXTENSION_CATEGORIES = new Set(["targets", "languages", "frameworks", "packs"]);
+const EXTENSION_CATEGORIES = new Set(["targets", "languages", "frameworks", "packs", "runtimes"]);
 const compareStable = (left, right) => (left === right ? 0 : left < right ? -1 : 1);
 
 /**
@@ -39,7 +39,8 @@ export const ALLOWED_IMPORTS = Object.freeze({
     "extensions-targets",
     "extensions-languages",
     "extensions-frameworks",
-    "extensions-packs"
+    "extensions-packs",
+    "extensions-runtimes"
   ]),
   interfaces: new Set([
     "core",
@@ -70,6 +71,12 @@ export const ALLOWED_IMPORTS = Object.freeze({
     "extensions-frameworks"
   ]),
   "extensions-packs": new Set(["core", "extension-sdk", "extensions-shared", "extensions-packs"]),
+  "extensions-runtimes": new Set([
+    "core",
+    "extension-sdk",
+    "extensions-shared",
+    "extensions-runtimes"
+  ]),
   // `src/cli.ts` is a thin executable entry point.  It is allowed to delegate
   // to the CLI interface bootstrap and to the public contracts only.
   cli: new Set(["core", "extension-sdk", "interfaces", "cli"]),
@@ -88,6 +95,7 @@ const HEAVY_PUBLIC_API_LAYERS = new Set([
   "extensions-languages",
   "extensions-frameworks",
   "extensions-packs",
+  "extensions-runtimes",
   "cli"
 ]);
 

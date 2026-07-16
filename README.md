@@ -2,7 +2,8 @@
 
 `aiyoke` is a deterministic, extensible compiler for repository-local AI harnesses. It
 translates one canonical specification into native artifacts for Claude Code,
-ChatGPT/Codex, Grok/Grok Build, and OpenRouter.
+ChatGPT/Codex, Grok/Grok Build, and OpenRouter, plus provider-neutral application
+runtime templates for the selected languages.
 
 ## Status
 
@@ -16,6 +17,8 @@ The first release implements this contract:
    changing the domain core.
 
 First-party language support is limited to Python, TypeScript, JavaScript, Rust, and Go.
+When schema-v3 runtime generation is enabled, each selected language receives
+registered reliability and integration primitives under `aiyoke-runtime/`.
 
 First-party targets are Claude Code, Codex, ChatGPT plugins, Grok Build, the xAI/Grok API,
 and OpenRouter. Provider credentials are referenced by environment-variable name and are never

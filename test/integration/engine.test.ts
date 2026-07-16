@@ -42,7 +42,7 @@ describe("first-release workflow", () => {
     expect(preview).toMatchObject({
       operation: "migrate",
       fromVersion: 1,
-      toVersion: 2,
+      toVersion: 3,
       changed: true,
       dryRun: true
     });
@@ -52,14 +52,14 @@ describe("first-release workflow", () => {
     expect(migrated.backupPath).toMatch(/^\.aiyoke\/backups\/aiyoke\.v1-/);
     expect(
       parseSchemaDocument(await readFile(join(root, "aiyoke.yaml"), "utf8")).schemaVersion
-    ).toBe(2);
+    ).toBe(3);
     if (migrated.backupPath === undefined) throw new Error("migration backup missing");
     expect(await readFile(join(root, migrated.backupPath), "utf8")).toBe(legacy);
 
     const rollbackPreview = await engine.rollbackMigration(migrated.backupPath, { dryRun: true });
     expect(rollbackPreview).toMatchObject({ operation: "rollback", changed: true, dryRun: true });
     const rolledBack = await engine.rollbackMigration(migrated.backupPath);
-    expect(rolledBack.backupPath).toMatch(/^\.aiyoke\/backups\/aiyoke\.v2-/);
+    expect(rolledBack.backupPath).toMatch(/^\.aiyoke\/backups\/aiyoke\.v3-/);
     expect(await readFile(join(root, "aiyoke.yaml"), "utf8")).toBe(legacy);
   });
 
@@ -108,7 +108,7 @@ describe("first-release workflow", () => {
     await expect(
       (await AiyokeEngine.open(root)).migrate({ targetVersion: 1, allowDowngrade: true })
     ).rejects.toThrow(/cannot be represented/);
-    expect(currentSource).toContain("schemaVersion: 2");
+    expect(currentSource).toContain("schemaVersion: 3");
   });
 
   it("initializes, previews, applies, checks, and reapplies without changes", async () => {
@@ -126,6 +126,7 @@ describe("first-release workflow", () => {
     expect(applied.changedPaths).toContain("AGENTS.md");
     expect(applied.changedPaths).toContain(".xai/provider.json");
     expect(applied.changedPaths).toContain(".openrouter/config.json");
+    expect(applied.changedPaths).toContain("aiyoke-runtime/typescript/runtime.ts");
 
     await writeFile(join(root, ".xai", "provider.json"), "drift\n", "utf8");
     const drifted = await AiyokeEngine.open(root);
@@ -281,7 +282,7 @@ describe("first-release workflow", () => {
       frameworks: [extensionId("gin")],
       targetAdapters: [extensionId("codex"), extensionId("openrouter")]
     });
-    expect(configured.backupPath).toMatch(/^\.aiyoke\/backups\/aiyoke\.v2-/);
+    expect(configured.backupPath).toMatch(/^\.aiyoke\/backups\/aiyoke\.v3-/);
     expect(configured.spec).toMatchObject({
       project: { name: "renamed", architecture: "clean" },
       composition: {

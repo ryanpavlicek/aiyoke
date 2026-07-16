@@ -75,7 +75,7 @@ describe("CLI initialization", () => {
     expect(await runCli(["migrate", "--root", root, "--json"])).toBe(0);
     expect(
       parseSchemaDocument(await readFile(join(root, "aiyoke.yaml"), "utf8")).schemaVersion
-    ).toBe(2);
+    ).toBe(3);
     expect(await runCli(["rollback", "--root", root])).toBe(1);
   });
 

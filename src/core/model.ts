@@ -38,6 +38,144 @@ export function aggregateHarnessStack(composition: ProjectComposition): HarnessS
   };
 }
 
+export type RetryPolicy =
+  | { readonly kind: "disabled" }
+  | {
+      readonly kind: "bounded";
+      readonly maxAttempts: number;
+      readonly baseDelayMs: number;
+      readonly maxDelayMs: number;
+      readonly jitterRatio: number;
+    };
+
+export type CircuitBreakerPolicy =
+  | { readonly kind: "disabled" }
+  | {
+      readonly kind: "failure-threshold";
+      readonly failureThreshold: number;
+      readonly resetAfterMs: number;
+      readonly halfOpenMaxAttempts: number;
+    };
+
+export type FallbackPolicy =
+  | { readonly kind: "disabled" }
+  | { readonly kind: "ordered"; readonly routes: readonly string[] };
+
+export interface ReliabilityPolicy {
+  readonly timeoutMs: number;
+  readonly retry: RetryPolicy;
+  readonly circuitBreaker: CircuitBreakerPolicy;
+  readonly fallback: FallbackPolicy;
+  readonly maxRepairAttempts: number;
+}
+
+export interface ObservabilityPolicy {
+  readonly kind: "events";
+  readonly contentCapture: "metadata-only" | "redacted";
+  readonly emitTokenUsage: boolean;
+  readonly emitEstimatedCost: boolean;
+}
+
+export type EvaluationPolicy =
+  | { readonly kind: "offline" }
+  | { readonly kind: "sampled-online"; readonly sampleRate: number };
+
+export interface SafetyPolicy {
+  readonly kind: "guarded";
+  readonly humanApproval: "disabled" | "high-impact";
+  readonly audit: "redacted";
+}
+
+export type CachePolicy =
+  | { readonly kind: "disabled" }
+  | { readonly kind: "registered"; readonly namespace: string };
+
+export type TokenBudgetPolicy =
+  | { readonly kind: "disabled" }
+  | {
+      readonly kind: "limited";
+      readonly maxInputTokens: number;
+      readonly maxOutputTokens: number;
+    };
+
+export type CostBudgetPolicy =
+  | { readonly kind: "disabled" }
+  | { readonly kind: "limited"; readonly maxEstimatedCostUsd: number };
+
+export interface PerformancePolicy {
+  readonly cache: CachePolicy;
+  readonly tokenBudget: TokenBudgetPolicy;
+  readonly costBudget: CostBudgetPolicy;
+  readonly maxConcurrency: number;
+  readonly maxBatchSize: number;
+}
+
+export interface RuntimePolicy {
+  readonly reliability: ReliabilityPolicy;
+  readonly observability: ObservabilityPolicy;
+  readonly evaluation: EvaluationPolicy;
+  readonly safety: SafetyPolicy;
+  readonly performance: PerformancePolicy;
+}
+
+export type RuntimeProfile =
+  | { readonly kind: "production" }
+  | ({ readonly kind: "custom" } & RuntimePolicy);
+
+export type RuntimeHarnessSpec =
+  | { readonly kind: "disabled" }
+  | {
+      readonly kind: "enabled";
+      readonly outputDirectory: string;
+      readonly profile: RuntimeProfile;
+    };
+
+export const DEFAULT_RUNTIME_HARNESS: RuntimeHarnessSpec = Object.freeze({
+  kind: "enabled",
+  outputDirectory: "aiyoke-runtime",
+  profile: { kind: "production" }
+} satisfies RuntimeHarnessSpec);
+
+export const PRODUCTION_RUNTIME_POLICY: RuntimePolicy = Object.freeze({
+  reliability: {
+    timeoutMs: 30_000,
+    retry: {
+      kind: "bounded",
+      maxAttempts: 3,
+      baseDelayMs: 250,
+      maxDelayMs: 4_000,
+      jitterRatio: 0.2
+    },
+    circuitBreaker: {
+      kind: "failure-threshold",
+      failureThreshold: 5,
+      resetAfterMs: 30_000,
+      halfOpenMaxAttempts: 1
+    },
+    fallback: { kind: "disabled" },
+    maxRepairAttempts: 1
+  },
+  observability: {
+    kind: "events",
+    contentCapture: "metadata-only",
+    emitTokenUsage: true,
+    emitEstimatedCost: true
+  },
+  evaluation: { kind: "offline" },
+  safety: { kind: "guarded", humanApproval: "high-impact", audit: "redacted" },
+  performance: {
+    cache: { kind: "disabled" },
+    tokenBudget: { kind: "limited", maxInputTokens: 32_000, maxOutputTokens: 4_096 },
+    costBudget: { kind: "disabled" },
+    maxConcurrency: 8,
+    maxBatchSize: 16
+  }
+} satisfies RuntimePolicy);
+
+export function resolveRuntimePolicy(profile: RuntimeProfile): RuntimePolicy {
+  return profile.kind === "production" ? PRODUCTION_RUNTIME_POLICY : profile;
+}
+
 export type AgentFeature =
   | "instructions"
   | "skills"
@@ -96,9 +234,10 @@ export interface GenerationPolicy {
 }
 
 export interface HarnessSpec {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly project: ProjectIdentity;
   readonly composition: ProjectComposition;
+  readonly runtime: RuntimeHarnessSpec;
   readonly targets: readonly TargetSpec[];
   readonly packs: readonly ExtensionId[];
   readonly generation: GenerationPolicy;

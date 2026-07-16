@@ -3,21 +3,22 @@ import type {
   ExtensionId,
   HarnessModule,
   HarnessSpec,
+  HarnessStack,
+  RuntimeHarnessSpec,
   TargetSpec,
   VerificationFinding
 } from "../core/index.js";
 
 export const EXTENSION_API_VERSION = "1.0.0";
 
-export type ExtensionKind = "target" | "language" | "framework" | "pack";
+export type ExtensionKind = "target" | "language" | "framework" | "pack" | "runtime";
 
 export interface ExtensionReference {
   readonly kind: ExtensionKind;
   readonly id: ExtensionId;
 }
 
-export interface ExtensionDescriptor {
-  readonly kind: ExtensionKind;
+export interface ExtensionDescriptorBase {
   readonly id: ExtensionId;
   readonly version: string;
   readonly apiVersion: typeof EXTENSION_API_VERSION;
@@ -27,6 +28,13 @@ export interface ExtensionDescriptor {
   readonly requires: readonly ExtensionReference[];
   readonly conflicts: readonly ExtensionReference[];
 }
+
+export type ExtensionDescriptor =
+  | (ExtensionDescriptorBase & { readonly kind: "target" })
+  | (ExtensionDescriptorBase & { readonly kind: "language" })
+  | (ExtensionDescriptorBase & { readonly kind: "framework" })
+  | (ExtensionDescriptorBase & { readonly kind: "pack" })
+  | (ExtensionDescriptorBase & { readonly kind: "runtime"; readonly language: ExtensionId });
 
 export interface WorkspaceSnapshot {
   readonly root: string;
@@ -54,6 +62,20 @@ export interface TargetVerificationContext extends ContributionContext {
   readonly target: TargetSpec;
 }
 
+export type RuntimeScope =
+  | { readonly kind: "project"; readonly stack: HarnessStack }
+  | {
+      readonly kind: "workspace";
+      readonly id: ExtensionId;
+      readonly path: string;
+      readonly stack: HarnessStack;
+    };
+
+export interface RuntimeRenderContext extends ContributionContext {
+  readonly runtime: Extract<RuntimeHarnessSpec, { readonly kind: "enabled" }>;
+  readonly scope: RuntimeScope;
+}
+
 export interface LanguageExtension {
   readonly descriptor: ExtensionDescriptor & { readonly kind: "language" };
   detect(workspace: WorkspaceSnapshot): Promise<DetectionResult>;
@@ -78,11 +100,17 @@ export interface TargetExtension {
   verify(context: TargetVerificationContext): Promise<readonly VerificationFinding[]>;
 }
 
+export interface RuntimeTemplateExtension {
+  readonly descriptor: ExtensionDescriptor & { readonly kind: "runtime" };
+  render(context: RuntimeRenderContext): Promise<readonly ArtifactIntent[]>;
+}
+
 export type AiyokeExtension =
   | LanguageExtension
   | FrameworkExtension
   | CapabilityPackExtension
-  | TargetExtension;
+  | TargetExtension
+  | RuntimeTemplateExtension;
 
 export interface ExtensionLoader<T extends AiyokeExtension = AiyokeExtension> {
   readonly descriptor: T["descriptor"];
@@ -102,5 +130,9 @@ export function definePack<T extends CapabilityPackExtension>(extension: T): T {
 }
 
 export function defineTarget<T extends TargetExtension>(extension: T): T {
+  return extension;
+}
+
+export function defineRuntime<T extends RuntimeTemplateExtension>(extension: T): T {
   return extension;
 }

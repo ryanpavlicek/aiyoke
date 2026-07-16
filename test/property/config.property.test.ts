@@ -129,9 +129,14 @@ const specArbitrary = fc
   })
   .map(
     ({ name, architecture, languages, frameworks, targets, packs }): HarnessSpec => ({
-      schemaVersion: 2,
+      schemaVersion: 3,
       project: { name, architecture },
       composition: { kind: "single", stack: { languages, frameworks } },
+      runtime: {
+        kind: "enabled",
+        outputDirectory: "aiyoke-runtime",
+        profile: { kind: "production" }
+      },
       targets,
       packs,
       generation: {

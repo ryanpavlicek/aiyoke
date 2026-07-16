@@ -3,17 +3,31 @@ import type { SchemaDocument } from "../../application/index.js";
 import {
   type AgentFeature,
   AiyokeError,
+  type CachePolicy,
+  type CircuitBreakerPolicy,
+  type CostBudgetPolicy,
+  DEFAULT_RUNTIME_HARNESS,
+  type EvaluationPolicy,
   extensionId,
+  type FallbackPolicy,
   type HarnessSpec,
   type HarnessStack,
   type JsonObject,
   type JsonValue,
+  type ObservabilityPolicy,
+  type PerformancePolicy,
   type ProjectComposition,
+  type ReliabilityPolicy,
+  type RetryPolicy,
+  type RuntimeHarnessSpec,
+  type RuntimeProfile,
+  type SafetyPolicy,
   safeRelativePath,
-  type TargetSpec
+  type TargetSpec,
+  type TokenBudgetPolicy
 } from "../../core/index.js";
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 const AGENT_FEATURES = new Set<AgentFeature>([
   "instructions",
@@ -171,6 +185,411 @@ function compositionSpec(value: unknown): ProjectComposition {
   throw new AiyokeError("INVALID_SPEC", "composition.kind must be single or monorepo.");
 }
 
+function boundedNumber(
+  value: unknown,
+  label: string,
+  minimum: number,
+  maximum: number,
+  integer = false
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < minimum ||
+    value > maximum ||
+    (integer && !Number.isSafeInteger(value))
+  ) {
+    throw new AiyokeError(
+      "INVALID_SPEC",
+      `${label} must be ${integer ? "an integer" : "a number"} from ${minimum} through ${maximum}.`
+    );
+  }
+  return value;
+}
+
+function requiredBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new AiyokeError("INVALID_SPEC", `${label} must be a boolean.`);
+  }
+  return value;
+}
+
+function retryPolicy(value: unknown): RetryPolicy {
+  const policy = record(value, "runtime.profile.reliability.retry");
+  if (policy.kind === "disabled") {
+    allowedKeys(policy, ["kind"], "runtime.profile.reliability.retry");
+    return { kind: "disabled" };
+  }
+  if (policy.kind === "bounded") {
+    allowedKeys(
+      policy,
+      ["kind", "maxAttempts", "baseDelayMs", "maxDelayMs", "jitterRatio"],
+      "runtime.profile.reliability.retry"
+    );
+    const baseDelayMs = boundedNumber(
+      policy.baseDelayMs,
+      "runtime.profile.reliability.retry.baseDelayMs",
+      0,
+      60_000,
+      true
+    );
+    const maxDelayMs = boundedNumber(
+      policy.maxDelayMs,
+      "runtime.profile.reliability.retry.maxDelayMs",
+      0,
+      300_000,
+      true
+    );
+    if (maxDelayMs < baseDelayMs) {
+      throw new AiyokeError(
+        "INVALID_SPEC",
+        "runtime.profile.reliability.retry.maxDelayMs cannot be less than baseDelayMs."
+      );
+    }
+    return {
+      kind: "bounded",
+      maxAttempts: boundedNumber(
+        policy.maxAttempts,
+        "runtime.profile.reliability.retry.maxAttempts",
+        1,
+        10,
+        true
+      ),
+      baseDelayMs,
+      maxDelayMs,
+      jitterRatio: boundedNumber(
+        policy.jitterRatio,
+        "runtime.profile.reliability.retry.jitterRatio",
+        0,
+        1
+      )
+    };
+  }
+  throw new AiyokeError(
+    "INVALID_SPEC",
+    "runtime.profile.reliability.retry.kind must be disabled or bounded."
+  );
+}
+
+function circuitBreakerPolicy(value: unknown): CircuitBreakerPolicy {
+  const policy = record(value, "runtime.profile.reliability.circuitBreaker");
+  if (policy.kind === "disabled") {
+    allowedKeys(policy, ["kind"], "runtime.profile.reliability.circuitBreaker");
+    return { kind: "disabled" };
+  }
+  if (policy.kind === "failure-threshold") {
+    allowedKeys(
+      policy,
+      ["kind", "failureThreshold", "resetAfterMs", "halfOpenMaxAttempts"],
+      "runtime.profile.reliability.circuitBreaker"
+    );
+    return {
+      kind: "failure-threshold",
+      failureThreshold: boundedNumber(
+        policy.failureThreshold,
+        "runtime.profile.reliability.circuitBreaker.failureThreshold",
+        1,
+        100,
+        true
+      ),
+      resetAfterMs: boundedNumber(
+        policy.resetAfterMs,
+        "runtime.profile.reliability.circuitBreaker.resetAfterMs",
+        1,
+        3_600_000,
+        true
+      ),
+      halfOpenMaxAttempts: boundedNumber(
+        policy.halfOpenMaxAttempts,
+        "runtime.profile.reliability.circuitBreaker.halfOpenMaxAttempts",
+        1,
+        10,
+        true
+      )
+    };
+  }
+  throw new AiyokeError(
+    "INVALID_SPEC",
+    "runtime.profile.reliability.circuitBreaker.kind must be disabled or failure-threshold."
+  );
+}
+
+function fallbackPolicy(value: unknown): FallbackPolicy {
+  const policy = record(value, "runtime.profile.reliability.fallback");
+  if (policy.kind === "disabled") {
+    allowedKeys(policy, ["kind"], "runtime.profile.reliability.fallback");
+    return { kind: "disabled" };
+  }
+  if (policy.kind === "ordered") {
+    allowedKeys(policy, ["kind", "routes"], "runtime.profile.reliability.fallback");
+    const routes = uniqueNonEmptyStringArray(
+      policy.routes,
+      "runtime.profile.reliability.fallback.routes"
+    );
+    if (routes.length === 0) {
+      throw new AiyokeError(
+        "INVALID_SPEC",
+        "runtime.profile.reliability.fallback.routes cannot be empty."
+      );
+    }
+    return { kind: "ordered", routes };
+  }
+  throw new AiyokeError(
+    "INVALID_SPEC",
+    "runtime.profile.reliability.fallback.kind must be disabled or ordered."
+  );
+}
+
+function reliabilityPolicy(value: unknown): ReliabilityPolicy {
+  const policy = record(value, "runtime.profile.reliability");
+  allowedKeys(
+    policy,
+    ["timeoutMs", "retry", "circuitBreaker", "fallback", "maxRepairAttempts"],
+    "runtime.profile.reliability"
+  );
+  return {
+    timeoutMs: boundedNumber(
+      policy.timeoutMs,
+      "runtime.profile.reliability.timeoutMs",
+      1,
+      600_000,
+      true
+    ),
+    retry: retryPolicy(policy.retry),
+    circuitBreaker: circuitBreakerPolicy(policy.circuitBreaker),
+    fallback: fallbackPolicy(policy.fallback),
+    maxRepairAttempts: boundedNumber(
+      policy.maxRepairAttempts,
+      "runtime.profile.reliability.maxRepairAttempts",
+      0,
+      5,
+      true
+    )
+  };
+}
+
+function observabilityPolicy(value: unknown): ObservabilityPolicy {
+  const policy = record(value, "runtime.profile.observability");
+  allowedKeys(
+    policy,
+    ["kind", "contentCapture", "emitTokenUsage", "emitEstimatedCost"],
+    "runtime.profile.observability"
+  );
+  if (policy.kind !== "events") {
+    throw new AiyokeError("INVALID_SPEC", "runtime.profile.observability.kind must be events.");
+  }
+  if (policy.contentCapture !== "metadata-only" && policy.contentCapture !== "redacted") {
+    throw new AiyokeError(
+      "INVALID_SPEC",
+      "runtime.profile.observability.contentCapture must be metadata-only or redacted."
+    );
+  }
+  return {
+    kind: "events",
+    contentCapture: policy.contentCapture,
+    emitTokenUsage: requiredBoolean(
+      policy.emitTokenUsage,
+      "runtime.profile.observability.emitTokenUsage"
+    ),
+    emitEstimatedCost: requiredBoolean(
+      policy.emitEstimatedCost,
+      "runtime.profile.observability.emitEstimatedCost"
+    )
+  };
+}
+
+function evaluationPolicy(value: unknown): EvaluationPolicy {
+  const policy = record(value, "runtime.profile.evaluation");
+  if (policy.kind === "offline") {
+    allowedKeys(policy, ["kind"], "runtime.profile.evaluation");
+    return { kind: "offline" };
+  }
+  if (policy.kind === "sampled-online") {
+    allowedKeys(policy, ["kind", "sampleRate"], "runtime.profile.evaluation");
+    return {
+      kind: "sampled-online",
+      sampleRate: boundedNumber(
+        policy.sampleRate,
+        "runtime.profile.evaluation.sampleRate",
+        0.000_001,
+        1
+      )
+    };
+  }
+  throw new AiyokeError(
+    "INVALID_SPEC",
+    "runtime.profile.evaluation.kind must be offline or sampled-online."
+  );
+}
+
+function safetyPolicy(value: unknown): SafetyPolicy {
+  const policy = record(value, "runtime.profile.safety");
+  allowedKeys(policy, ["kind", "humanApproval", "audit"], "runtime.profile.safety");
+  if (policy.kind !== "guarded") {
+    throw new AiyokeError("INVALID_SPEC", "runtime.profile.safety.kind must be guarded.");
+  }
+  if (policy.humanApproval !== "disabled" && policy.humanApproval !== "high-impact") {
+    throw new AiyokeError(
+      "INVALID_SPEC",
+      "runtime.profile.safety.humanApproval must be disabled or high-impact."
+    );
+  }
+  if (policy.audit !== "redacted") {
+    throw new AiyokeError("INVALID_SPEC", "runtime.profile.safety.audit must be redacted.");
+  }
+  return { kind: "guarded", humanApproval: policy.humanApproval, audit: "redacted" };
+}
+
+function cachePolicy(value: unknown): CachePolicy {
+  const policy = record(value, "runtime.profile.performance.cache");
+  if (policy.kind === "disabled") {
+    allowedKeys(policy, ["kind"], "runtime.profile.performance.cache");
+    return { kind: "disabled" };
+  }
+  if (policy.kind === "registered") {
+    allowedKeys(policy, ["kind", "namespace"], "runtime.profile.performance.cache");
+    return {
+      kind: "registered",
+      namespace: requiredString(policy.namespace, "runtime.profile.performance.cache.namespace")
+    };
+  }
+  throw new AiyokeError(
+    "INVALID_SPEC",
+    "runtime.profile.performance.cache.kind must be disabled or registered."
+  );
+}
+
+function tokenBudgetPolicy(value: unknown): TokenBudgetPolicy {
+  const policy = record(value, "runtime.profile.performance.tokenBudget");
+  if (policy.kind === "disabled") {
+    allowedKeys(policy, ["kind"], "runtime.profile.performance.tokenBudget");
+    return { kind: "disabled" };
+  }
+  if (policy.kind === "limited") {
+    allowedKeys(
+      policy,
+      ["kind", "maxInputTokens", "maxOutputTokens"],
+      "runtime.profile.performance.tokenBudget"
+    );
+    return {
+      kind: "limited",
+      maxInputTokens: boundedNumber(
+        policy.maxInputTokens,
+        "runtime.profile.performance.tokenBudget.maxInputTokens",
+        1,
+        10_000_000,
+        true
+      ),
+      maxOutputTokens: boundedNumber(
+        policy.maxOutputTokens,
+        "runtime.profile.performance.tokenBudget.maxOutputTokens",
+        1,
+        10_000_000,
+        true
+      )
+    };
+  }
+  throw new AiyokeError(
+    "INVALID_SPEC",
+    "runtime.profile.performance.tokenBudget.kind must be disabled or limited."
+  );
+}
+
+function costBudgetPolicy(value: unknown): CostBudgetPolicy {
+  const policy = record(value, "runtime.profile.performance.costBudget");
+  if (policy.kind === "disabled") {
+    allowedKeys(policy, ["kind"], "runtime.profile.performance.costBudget");
+    return { kind: "disabled" };
+  }
+  if (policy.kind === "limited") {
+    allowedKeys(policy, ["kind", "maxEstimatedCostUsd"], "runtime.profile.performance.costBudget");
+    return {
+      kind: "limited",
+      maxEstimatedCostUsd: boundedNumber(
+        policy.maxEstimatedCostUsd,
+        "runtime.profile.performance.costBudget.maxEstimatedCostUsd",
+        0.000_001,
+        100_000
+      )
+    };
+  }
+  throw new AiyokeError(
+    "INVALID_SPEC",
+    "runtime.profile.performance.costBudget.kind must be disabled or limited."
+  );
+}
+
+function performancePolicy(value: unknown): PerformancePolicy {
+  const policy = record(value, "runtime.profile.performance");
+  allowedKeys(
+    policy,
+    ["cache", "tokenBudget", "costBudget", "maxConcurrency", "maxBatchSize"],
+    "runtime.profile.performance"
+  );
+  return {
+    cache: cachePolicy(policy.cache),
+    tokenBudget: tokenBudgetPolicy(policy.tokenBudget),
+    costBudget: costBudgetPolicy(policy.costBudget),
+    maxConcurrency: boundedNumber(
+      policy.maxConcurrency,
+      "runtime.profile.performance.maxConcurrency",
+      1,
+      1_024,
+      true
+    ),
+    maxBatchSize: boundedNumber(
+      policy.maxBatchSize,
+      "runtime.profile.performance.maxBatchSize",
+      1,
+      10_000,
+      true
+    )
+  };
+}
+
+function runtimeProfile(value: unknown): RuntimeProfile {
+  const profile = record(value, "runtime.profile");
+  if (profile.kind === "production") {
+    allowedKeys(profile, ["kind"], "runtime.profile");
+    return { kind: "production" };
+  }
+  if (profile.kind === "custom") {
+    allowedKeys(
+      profile,
+      ["kind", "reliability", "observability", "evaluation", "safety", "performance"],
+      "runtime.profile"
+    );
+    return {
+      kind: "custom",
+      reliability: reliabilityPolicy(profile.reliability),
+      observability: observabilityPolicy(profile.observability),
+      evaluation: evaluationPolicy(profile.evaluation),
+      safety: safetyPolicy(profile.safety),
+      performance: performancePolicy(profile.performance)
+    };
+  }
+  throw new AiyokeError("INVALID_SPEC", "runtime.profile.kind must be production or custom.");
+}
+
+function runtimeSpec(value: unknown): RuntimeHarnessSpec {
+  const runtime = record(value, "runtime");
+  if (runtime.kind === "disabled") {
+    allowedKeys(runtime, ["kind"], "runtime");
+    return { kind: "disabled" };
+  }
+  if (runtime.kind === "enabled") {
+    allowedKeys(runtime, ["kind", "outputDirectory", "profile"], "runtime");
+    return {
+      kind: "enabled",
+      outputDirectory: safeRelativePath(
+        requiredString(runtime.outputDirectory, "runtime.outputDirectory")
+      ),
+      profile: runtimeProfile(runtime.profile)
+    };
+  }
+  throw new AiyokeError("INVALID_SPEC", "runtime.kind must be disabled or enabled.");
+}
+
 function targetSpec(value: unknown, index: number): TargetSpec {
   const target = record(value, `targets[${index}]`);
   const kind = requiredString(target.kind, `targets[${index}].kind`);
@@ -303,7 +722,7 @@ export function parseHarnessSpec(source: string): HarnessSpec {
   }
   allowedKeys(
     root,
-    ["schemaVersion", "project", "composition", "targets", "packs", "generation"],
+    ["schemaVersion", "project", "composition", "runtime", "targets", "packs", "generation"],
     "aiyoke.yaml"
   );
   const project = record(root.project, "project");
@@ -339,6 +758,7 @@ export function parseHarnessSpec(source: string): HarnessSpec {
       architecture
     },
     composition: compositionSpec(root.composition),
+    runtime: runtimeSpec(root.runtime),
     targets,
     packs: idArray(root.packs ?? [], "packs"),
     generation: {
@@ -367,6 +787,7 @@ export function defaultHarnessSpec(projectName: string): HarnessSpec {
       kind: "single",
       stack: { languages: [extensionId("typescript")], frameworks: [] }
     },
+    runtime: DEFAULT_RUNTIME_HARNESS,
     targets: [
       {
         kind: "coding-agent",

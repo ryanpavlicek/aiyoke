@@ -6,6 +6,8 @@ export type {
   MonorepoWorkspace,
   PlanOperation,
   ProjectComposition,
+  RuntimeHarnessSpec,
+  RuntimePolicy,
   TargetSpec,
   VerificationFinding
 } from "./core/index.js";
@@ -17,12 +19,14 @@ export type {
   ExtensionLoader,
   FrameworkExtension,
   LanguageExtension,
+  RuntimeTemplateExtension,
   TargetExtension
 } from "./extension-sdk/index.js";
 export {
   defineFramework,
   defineLanguage,
   definePack,
+  defineRuntime,
   defineTarget,
   EXTENSION_API_VERSION,
   ExtensionRegistry

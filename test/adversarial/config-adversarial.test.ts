@@ -23,8 +23,8 @@ generation:
     expect(() => parseHarnessSpec(alias)).toThrow(/valid YAML/);
 
     const duplicate = stringify(defaultHarnessSpec("example")).replace(
-      "schemaVersion: 2",
-      "schemaVersion: 2\nschemaVersion: 2"
+      "schemaVersion: 3",
+      "schemaVersion: 3\nschemaVersion: 3"
     );
     expect(() => parseHarnessSpec(duplicate)).toThrow(/valid YAML/);
   });

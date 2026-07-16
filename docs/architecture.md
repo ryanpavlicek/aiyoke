@@ -19,11 +19,11 @@ its row (and external packages), but it must not reach around the boundary.
 | Infrastructure | `src/infrastructure` | Filesystem, configuration, hashing, and other replaceable adapters | Core, SDK, application, and infrastructure; never interfaces |
 | Engine | `src/engine` | Composition/facade that wires application, infrastructure, and lazy extension loaders | Core, SDK, application, infrastructure, engine, and extension implementations when composition requires it; never interfaces |
 | Interfaces | `src/interfaces` | CLI and other user-facing adapters | Lower layers and interfaces |
-| Extensions | `src/extensions` | First-party and third-party targets, languages, frameworks, and packs | Core, SDK, `extensions/shared`, and files in the same extension category; extensions should not import application, infrastructure, or interfaces |
+| Extensions | `src/extensions` | First-party and third-party targets, languages, frameworks, packs, and runtimes | Core, SDK, `extensions/shared`, and files in the same extension category; extensions should not import application, infrastructure, or interfaces |
 
 `src/extensions/shared` is deliberately small. It contains reusable extension
 helpers, not application services. Extension categories (`targets`, `languages`,
-`frameworks`, and `packs`) should communicate through SDK contracts and registry
+`frameworks`, `packs`, and `runtimes`) should communicate through SDK contracts and registry
 metadata rather than importing one another.
 
 The repository runs `scripts/check-architecture.mjs` in `pnpm check`. The check
@@ -32,7 +32,7 @@ the explicit lazy-loading boundary and are not treated as static edges.
 
 ## Canonical source and lifecycle
 
-The version-2 project specification is the source of truth. Its composition is
+The version-3 project specification is the source of truth. Its composition is
 a discriminated union: a single project owns one stack, while a monorepo owns a
 root stack plus identified, path-bound workspace stacks. The compiler aggregates
 registered extensions across that composition without adding language or
@@ -47,6 +47,12 @@ pipeline:
 4. **Apply** writes only owned artifacts (or marked managed sections), using
    atomic replacement and safe relative paths.
 5. **Verify** checks generated artifacts and target-specific invariants.
+
+Enabled application-plane runtimes use the same rule. The compiler resolves one
+`RuntimeTemplateExtension` per selected language and invokes it for the root or
+workspace scope. Runtime extensions generate provider-neutral source and resolved
+policy artifacts; provider, telemetry, cache, safety, approval, and evaluation
+services remain registered ports outside the core.
 
 Schema evolution is a separate, explicit lifecycle. Adjacent reversible steps
 are registered in `SchemaMigrationRegistry`; normal loading never silently

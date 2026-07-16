@@ -5,12 +5,13 @@ loads it strictly: unknown structural fields, duplicate keys, aliases, unsafe
 paths, invalid variants, excessive input size, and excessive settings depth or
 node count fail before extension resolution or filesystem writes.
 
-## Schema version 2
+## Schema version 3
 
-Version 2 models project composition explicitly. A single project has one stack:
+Version 2 introduced explicit project composition. Version 3 adds a composed,
+provider-neutral production runtime policy. A single project can use:
 
 ```yaml
-schemaVersion: 2
+schemaVersion: 3
 project:
   name: example
   architecture: layered
@@ -21,12 +22,17 @@ composition:
       - typescript
     frameworks:
       - nextjs
+runtime:
+  kind: enabled
+  outputDirectory: aiyoke-runtime
+  profile:
+    kind: production
 ```
 
 A monorepo has a root stack and one or more uniquely identified workspace roots:
 
 ```yaml
-schemaVersion: 2
+schemaVersion: 3
 project:
   name: polyglot
   architecture: layered
@@ -51,7 +57,24 @@ composition:
           - python
         frameworks:
           - fastapi
+runtime:
+  kind: enabled
+  outputDirectory: aiyoke-runtime
+  profile:
+    kind: production
 ```
+
+Set `runtime.kind` to `disabled` to generate only developer-plane artifacts.
+The production profile resolves to bounded retry, timeout, circuit-breaker,
+structured-output repair, metadata-only events, offline evaluation, guarded
+high-impact actions, token budgets, and concurrency/batch limits. A custom
+profile must state every composed policy explicitly; unknown fields and unsafe
+or out-of-range values fail closed.
+
+When enabled, each selected language resolves exactly one registered runtime
+template. The default output contains executable source, a resolved `policy.json`,
+and integration guidance under `aiyoke-runtime/<language>`. Monorepo workspace
+artifacts are rooted under that workspace's configured path.
 
 The remainder of the document contains discriminated target configurations,
 capability packs, and generation paths. Run `aiyoke init`, then inspect the
@@ -94,7 +117,8 @@ aiyoke migrate
 
 Use `--to <version>` to select a supported destination. Downgrades fail unless
 `--allow-downgrade` is present, and a downgrade that cannot represent current
-state—such as schema-v2 monorepo composition in schema v1—fails even with consent.
+state—such as schema-v2 monorepo composition in schema v1 or customized runtime
+policy in schema v2—fails even with consent.
 
 Every applied migration prints a content-addressed backup path. Restore it with:
 

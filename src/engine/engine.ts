@@ -3,6 +3,7 @@ import {
   type AppliedMigration,
   type ApplyResult,
   HarnessCompiler,
+  runtimeTemplateReferences,
   type SchemaMigrationRegistry
 } from "../application/index.js";
 import {
@@ -398,7 +399,10 @@ export class AiyokeEngine {
       ...stack.languages.map((id) => ({ kind: "language" as const, id })),
       ...stack.frameworks.map((id) => ({ kind: "framework" as const, id })),
       ...spec.targets.map((target) => ({ kind: "target" as const, id: target.adapter })),
-      ...spec.packs.map((id) => ({ kind: "pack" as const, id }))
+      ...spec.packs.map((id) => ({ kind: "pack" as const, id })),
+      ...(spec.runtime.kind === "enabled"
+        ? runtimeTemplateReferences(this.#registry, stack.languages)
+        : [])
     ]);
   }
 

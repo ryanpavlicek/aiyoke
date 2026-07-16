@@ -2,6 +2,7 @@ import { AiyokeError, compareCodePoints, type ExtensionId } from "../core/index.
 import {
   type AiyokeExtension,
   EXTENSION_API_VERSION,
+  type ExtensionDescriptor,
   type ExtensionKind,
   type ExtensionLoader,
   type ExtensionReference
@@ -56,6 +57,22 @@ export class ExtensionRegistry {
 
   registerPack(loader: ExtensionLoader): this {
     return this.#registerKind("pack", loader);
+  }
+
+  registerRuntime(loader: ExtensionLoader): this {
+    if (loader.descriptor.kind !== "runtime") return this.#registerKind("runtime", loader);
+    const language = loader.descriptor.language;
+    const existing = this.list("runtime").find((candidate) => {
+      const descriptor: ExtensionDescriptor = candidate.descriptor;
+      return descriptor.kind === "runtime" && descriptor.language === language;
+    });
+    if (existing !== undefined) {
+      throw new AiyokeError(
+        "EXTENSION_DUPLICATE",
+        `Runtime language ${loader.descriptor.language} is already owned by ${existing.descriptor.id}.`
+      );
+    }
+    return this.register(loader);
   }
 
   #registerKind(kind: ExtensionKind, loader: ExtensionLoader): this {

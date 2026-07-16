@@ -31,7 +31,7 @@ that does not cover the stated scope are not completion evidence.
 | CI | Partial | Linux and Node 22/24 run the full check; Windows, macOS, packaging, security, and release jobs are missing. |
 | Distribution and rollback | Missing | No publish workflow, provenance, package smoke test, SBOM, upgrade test, or rollback procedure exists. |
 | Public documentation | Partial | Architecture and extension notes exist; README installation, tutorials, recipes, API reference, troubleshooting, and release operations are incomplete. |
-| Production runtime templates | Missing | Generated artifacts configure developer agents and provider routes, but do not yet supply executable reliability, observability, evaluation, safety, or cost-control primitives. |
+| Production runtime templates | Partial | Schema v3 models composed production/custom policy; registered templates generate executable typed ports, retry/backoff, budget, and circuit-breaker primitives for all five languages. Full orchestrators, framework adapters, native-toolchain CI, and every contract criterion remain open. |
 
 ## 0.2 release gates
 
@@ -52,10 +52,9 @@ that does not cover the stated scope are not completion evidence.
    typed model requests, responses, failures, policies, lifecycle state, and
    registration points without adding provider branches to the core.
 
-Current local evidence for gates 1 and 2: `pnpm check` passes 96 tests with
-91.34% statement coverage on Node 24, including migration registry, schema,
-engine, CLI, property-based, and adversarial suites. Cross-platform CI evidence
-is still required before the gates are considered release-final.
+Current evidence for gates 1 and 2: commit `bcf12ed` passed GitHub CI on Node 22
+and 24 after a 96-test local gate. Subsequent schema-v3/runtime work remains
+unreleased and must pass the same gates plus native runtime validation.
 
 ## 0.3 release gates
 

@@ -1,4 +1,8 @@
-export { compositionMigration, createSchemaMigrationRegistry } from "./migrations.js";
+export {
+  compositionMigration,
+  createSchemaMigrationRegistry,
+  runtimeHarnessMigration
+} from "./migrations.js";
 export {
   CURRENT_SCHEMA_VERSION,
   defaultHarnessSpec,

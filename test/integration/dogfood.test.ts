@@ -97,6 +97,17 @@ describe("dogfood project matrix", () => {
         ".agents/plugins/marketplace.json",
         ".xai/provider.json",
         ".openrouter/config.json",
+        `aiyoke-runtime/${fixture.language}/runtime.${
+          fixture.language === "typescript"
+            ? "ts"
+            : fixture.language === "javascript"
+              ? "js"
+              : fixture.language === "python"
+                ? "py"
+                : fixture.language === "rust"
+                  ? "rs"
+                  : "go"
+        }`,
         ".aiyoke/lock.json"
       ])
     );

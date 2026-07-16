@@ -17,9 +17,11 @@ import type {
   ExtensionRegistry,
   FrameworkExtension,
   LanguageExtension,
+  RuntimeScope,
   TargetExtension
 } from "../extension-sdk/index.js";
 import type { HashPort, WorkspacePort } from "./ports.js";
+import { loadRuntimeTemplate, runtimeTemplateReferences } from "./runtime-selection.js";
 
 export interface ApplyResult {
   readonly plan: HarnessPlan;
@@ -51,6 +53,23 @@ function targetExtension(extension: AiyokeExtension): TargetExtension {
     );
   }
   return extension as TargetExtension;
+}
+
+function runtimeScopes(spec: HarnessSpec): readonly RuntimeScope[] {
+  if (spec.composition.kind === "single") {
+    return [{ kind: "project", stack: spec.composition.stack }];
+  }
+  return [
+    { kind: "project", stack: spec.composition.root },
+    ...spec.composition.workspaces.map(
+      (workspace): RuntimeScope => ({
+        kind: "workspace",
+        id: workspace.id,
+        path: workspace.path,
+        stack: workspace.stack
+      })
+    )
+  ];
 }
 
 function stableOperation(operation: PlanOperation): object {
@@ -163,6 +182,22 @@ export class HarnessCompiler {
   async plan(spec: HarnessSpec): Promise<HarnessPlan> {
     const modules = await this.#resolveModules(spec);
     const candidates: ArtifactIntent[] = [];
+
+    if (spec.runtime.kind === "enabled") {
+      for (const scope of runtimeScopes(spec)) {
+        for (const reference of runtimeTemplateReferences(this.registry, scope.stack.languages)) {
+          const runtime = await loadRuntimeTemplate(this.registry, reference);
+          candidates.push(
+            ...(await runtime.render({
+              spec,
+              workspace: this.workspace,
+              runtime: spec.runtime,
+              scope
+            }))
+          );
+        }
+      }
+    }
 
     for (const target of spec.targets) {
       const extension = targetExtension(

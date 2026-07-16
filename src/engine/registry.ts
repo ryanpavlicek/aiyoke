@@ -2,6 +2,7 @@ import { type ExtensionLoader, ExtensionRegistry } from "../extension-sdk/index.
 import { frameworkLoaders } from "../extensions/frameworks/index.js";
 import { languageLoaders } from "../extensions/languages/index.js";
 import { engineeringPackLoader } from "../extensions/packs/index.js";
+import { runtimeLoaders } from "../extensions/runtimes/index.js";
 import {
   createChatGPTLoader,
   createClaudeCodeLoader,
@@ -14,6 +15,7 @@ import {
 export function registerBuiltins(registry = new ExtensionRegistry()): ExtensionRegistry {
   for (const loader of languageLoaders) registry.registerLanguage(loader);
   for (const loader of frameworkLoaders) registry.registerFramework(loader);
+  for (const loader of runtimeLoaders) registry.registerRuntime(loader);
   registry.registerPack(engineeringPackLoader);
   registry.registerTarget(createClaudeCodeLoader());
   registry.registerTarget(createCodexLoader());

@@ -7,3 +7,4 @@ export {
   type SchemaMigrationResult
 } from "./migration-registry.js";
 export type { HashPort, WorkspacePort } from "./ports.js";
+export { loadRuntimeTemplate, runtimeTemplateReferences } from "./runtime-selection.js";

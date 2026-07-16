@@ -26,13 +26,18 @@ describe("built-in schema migrations", () => {
   it("migrates v1 to canonical v2 and reverses losslessly", () => {
     const registry = createSchemaMigrationRegistry();
     const legacy = parseSchemaDocument(legacySource());
-    const upgraded = registry.migrate(legacy, 2);
+    const upgraded = registry.migrate(legacy, 3);
     const spec = parseHarnessSpec(stringifySchemaDocument(upgraded.document));
 
-    expect(spec.schemaVersion).toBe(2);
+    expect(spec.schemaVersion).toBe(3);
     expect(spec.composition).toEqual({
       kind: "single",
       stack: { languages: ["typescript"], frameworks: [] }
+    });
+    expect(spec.runtime).toEqual({
+      kind: "enabled",
+      outputDirectory: "aiyoke-runtime",
+      profile: { kind: "production" }
     });
     const downgraded = registry.migrate(upgraded.document, 1, { allowDowngrade: true });
     expect(downgraded.document).toEqual(legacy);
@@ -100,5 +105,17 @@ describe("built-in schema migrations", () => {
     for (const composition of cases) {
       expect(() => parseHarnessSpec(stringify({ ...base, composition }))).toThrow();
     }
+  });
+
+  it("refuses to discard customized runtime configuration during downgrade", () => {
+    const spec = {
+      ...defaultHarnessSpec("custom-runtime"),
+      runtime: { kind: "disabled" as const }
+    };
+    expect(() =>
+      createSchemaMigrationRegistry().migrate(parseSchemaDocument(stringify(spec)), 2, {
+        allowDowngrade: true
+      })
+    ).toThrow(/Customized runtime configuration/);
   });
 });
