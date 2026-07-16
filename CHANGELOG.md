@@ -43,6 +43,8 @@ All notable changes to this project are documented here. The project follows
 - A 12-workspace polyglot monorepo acceptance suite covering every supported
   language and framework integration, nested conflicting evidence, deterministic
   plans, drift checks, and idempotent apply behavior.
+- Property coverage for monorepo serialization and safe Unicode path components,
+  including canonical workspace field ordering independent of object construction.
 
 ## 0.1.0 — 2026-07-16
 

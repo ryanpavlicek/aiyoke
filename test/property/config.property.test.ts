@@ -110,6 +110,32 @@ const targetArbitrary = fc.oneof(
   gatewayArbitrary
 );
 
+const stackArbitrary = fc.record({
+  languages: fc.uniqueArray(extensionIdArbitrary, { maxLength: 5 }),
+  frameworks: fc.uniqueArray(extensionIdArbitrary, { maxLength: 5 })
+});
+
+const compositionArbitrary = fc.oneof(
+  stackArbitrary.map((stack) => ({ kind: "single" as const, stack })),
+  fc
+    .record({
+      root: stackArbitrary,
+      workspaces: fc.uniqueArray(fc.record({ id: extensionIdArbitrary, stack: stackArbitrary }), {
+        minLength: 1,
+        maxLength: 8,
+        selector: (workspace) => workspace.id
+      })
+    })
+    .map(({ root, workspaces }) => ({
+      kind: "monorepo" as const,
+      root,
+      workspaces: workspaces.map((workspace) => ({
+        ...workspace,
+        path: `packages/${workspace.id}`
+      }))
+    }))
+);
+
 const specArbitrary = fc
   .record({
     name: nonBlankString,
@@ -119,8 +145,7 @@ const specArbitrary = fc
       "clean" as const,
       "custom" as const
     ),
-    languages: fc.uniqueArray(extensionIdArbitrary, { maxLength: 5 }),
-    frameworks: fc.uniqueArray(extensionIdArbitrary, { maxLength: 5 }),
+    composition: compositionArbitrary,
     targets: fc.uniqueArray(targetArbitrary, {
       maxLength: 8,
       selector: (target) => `${target.kind}:${target.adapter}`
@@ -128,10 +153,10 @@ const specArbitrary = fc
     packs: fc.uniqueArray(extensionIdArbitrary, { maxLength: 5 })
   })
   .map(
-    ({ name, architecture, languages, frameworks, targets, packs }): HarnessSpec => ({
+    ({ name, architecture, composition, targets, packs }): HarnessSpec => ({
       schemaVersion: 3,
       project: { name, architecture },
-      composition: { kind: "single", stack: { languages, frameworks } },
+      composition,
       runtime: {
         kind: "enabled",
         outputDirectory: "aiyoke-runtime",
@@ -173,6 +198,26 @@ describe("configuration properties", () => {
         fc.boolean(),
         (parts, win) => {
           const separator = win ? "\\" : "/";
+          expect(safeRelativePath(parts.join(separator))).toBe(parts.join("/"));
+        }
+      ),
+      { numRuns: RUNS }
+    );
+  });
+
+  it("preserves safe Unicode path components across separators", () => {
+    const component = fc
+      .array(fc.constantFrom("é", "漢", "λ", "д", "ñ", "ø", "१"), {
+        minLength: 1,
+        maxLength: 12
+      })
+      .map((characters) => characters.join(""));
+    fc.assert(
+      fc.property(
+        fc.array(component, { minLength: 1, maxLength: 6 }),
+        fc.boolean(),
+        (parts, windows) => {
+          const separator = windows ? "\\" : "/";
           expect(safeRelativePath(parts.join(separator))).toBe(parts.join("/"));
         }
       ),

@@ -27,7 +27,7 @@ that does not cover the stated scope are not completion evidence.
 | Extension compatibility | Proven | The public `runExtensionCompatibility()` kit validates descriptors/API versions, dependency graphs, loader identity, typed execution, deterministic repeatability, normalized safe artifacts, output bounds, LF content, and secret canaries without importing engine internals. Adversarial fixtures cover hostile loaders and renderers. |
 | Signed extension discovery | Missing | External loaders must be supplied programmatically and have no signed manifest or trust policy. |
 | Renderer isolation | Missing | Third-party renderers execute in-process with the host's authority. |
-| Adversarial and property testing | Partial | Seeded fast-check suites cover configuration round trips, paths, parser limits, aliases, duplicates, and hostile shapes; malicious extension, filesystem-race, and generated-runtime adversarial matrices remain open. |
+| Adversarial and property testing | Partial | Seeded fast-check suites cover single/monorepo configuration round trips, ASCII/Unicode platform paths, parser limits, aliases, duplicates, and hostile shapes. Compatibility fixtures contain malicious loaders, nondeterministic/oversized/unsafe output, duplicate ownership, secret leakage, and invalid detection. Generated runtimes cover deadlines, cancellation, panics/exceptions, malformed output, and response limits. A deterministic filesystem symlink-swap race harness remains open. |
 | CI | Partial | Linux and Node 22/24 run the full check; Windows, macOS, packaging, security, and release jobs are missing. |
 | Distribution and rollback | Missing | No publish workflow, provenance, package smoke test, SBOM, upgrade test, or rollback procedure exists. |
 | Public documentation | Partial | Architecture and extension notes exist; README installation, tutorials, recipes, API reference, troubleshooting, and release operations are incomplete. |
@@ -68,6 +68,8 @@ The public compatibility-kit suite and the full polyglot monorepo framework
 matrix are part of `pnpm check`; the focused six-test gate also proves hostile
 loader containment, deterministic planning, nested conflicting detection
 evidence, complete framework integration rendering, and second-apply idempotence.
+That tranche passed the complete Linux Node 22/24, native-runtime, and
+framework-runtime workflow in GitHub Actions run `29528657917`.
 
 ## 0.3 release gates
 

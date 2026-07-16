@@ -772,7 +772,31 @@ export function parseHarnessSpec(source: string): HarnessSpec {
 }
 
 export function stringifyHarnessSpec(spec: HarnessSpec): string {
-  return stringify(spec, { lineWidth: 0 });
+  const composition: ProjectComposition =
+    spec.composition.kind === "single"
+      ? {
+          kind: "single",
+          stack: {
+            languages: spec.composition.stack.languages,
+            frameworks: spec.composition.stack.frameworks
+          }
+        }
+      : {
+          kind: "monorepo",
+          root: {
+            languages: spec.composition.root.languages,
+            frameworks: spec.composition.root.frameworks
+          },
+          workspaces: spec.composition.workspaces.map((workspace) => ({
+            id: workspace.id,
+            path: workspace.path,
+            stack: {
+              languages: workspace.stack.languages,
+              frameworks: workspace.stack.frameworks
+            }
+          }))
+        };
+  return stringify({ ...spec, composition }, { lineWidth: 0 });
 }
 
 export function stringifySchemaDocument(document: SchemaDocument): string {
