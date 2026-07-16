@@ -56,6 +56,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:runtimes": "pnpm build && node scripts/validate-runtime-fixtures.mjs",
+    "test:frameworks": "pnpm build && node scripts/validate-framework-runtime-fixtures.mjs",
     "architecture": "node scripts/check-architecture.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm architecture && pnpm test:coverage && pnpm build",
     "dev": "tsx src/cli.ts",
