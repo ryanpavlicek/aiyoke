@@ -54,6 +54,9 @@ All notable changes to this project are documented here. The project follows
   a minimal environment, package re-hashing, and fail-closed artifact validation.
 - A complete external hello-target template that passes the public compatibility
   kit and signed isolated-rendering flow with ephemeral CI trust material.
+- Canonical workspace roots and fail-closed atomic-write parent binding, with a
+  deterministic adversarial harness for symlink substitution before staging and
+  before rename.
 
 ## 0.1.0 — 2026-07-16
 

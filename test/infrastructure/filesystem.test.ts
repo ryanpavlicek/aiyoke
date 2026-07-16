@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -68,4 +68,29 @@ describe("NodeWorkspace", () => {
       /symbolic link/
     );
   });
+
+  it.each(["directories-verified", "temporary-staged"] as const)(
+    "fails closed when an ancestor becomes a symlink after %s",
+    async (raceCheckpoint) => {
+      const root = await temporaryRoot("aiyoke-symlink-race-");
+      const outside = await temporaryRoot("aiyoke-race-outside-");
+      await mkdir(join(root, "generated"));
+      let swapped = false;
+      const workspace = await NodeWorkspace.open(root, {
+        async onAtomicWriteCheckpoint(checkpoint, context) {
+          if (swapped || checkpoint !== raceCheckpoint) return;
+          swapped = true;
+          await rename(context.parent, join(root, `original-${checkpoint}`));
+          await symlink(outside, context.parent, process.platform === "win32" ? "junction" : "dir");
+        }
+      });
+      await expect(workspace.writeAtomic("generated/escaped.txt", "unsafe", false)).rejects.toThrow(
+        /directory substitution|non-directory/
+      );
+      expect(swapped).toBe(true);
+      await expect(readFile(join(outside, "escaped.txt"), "utf8")).rejects.toMatchObject({
+        code: "ENOENT"
+      });
+    }
+  );
 });

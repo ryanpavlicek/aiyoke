@@ -27,7 +27,7 @@ that does not cover the stated scope are not completion evidence.
 | Extension compatibility | Proven | The public `runExtensionCompatibility()` kit validates descriptors/API versions, dependency graphs, loader identity, typed execution, deterministic repeatability, normalized safe artifacts, output bounds, LF content, and secret canaries without importing engine internals. Adversarial fixtures cover hostile loaders and renderers. |
 | Signed extension discovery | Proven | The lazy Node adapter performs strict bounded manifest parsing, deterministic package-tree hashing, Ed25519 verification, offline trust roots, key/content/manifest revocation, digest-bound explicit consent, a second pre-import content check, symlink rejection, and exact exported-descriptor verification. Adversarial tests prove rejection before import, and the external hello target completes the signed flow. |
 | Renderer isolation | Partial | The optional lazy adapter verifies without host import, re-hashes in a minimal-environment child, uses a versioned IPC protocol, bounds input/output/files/artifacts/V8 heap, supports deadlines and cancellation, ignores stdout, and validates results in both processes. Hostile renderer tests pass on Windows; Linux and packaged-artifact CI evidence is pending. |
-| Adversarial and property testing | Partial | Seeded fast-check suites cover single/monorepo configuration round trips, ASCII/Unicode platform paths, parser limits, aliases, duplicates, and hostile shapes. Compatibility fixtures contain malicious loaders, nondeterministic/oversized/unsafe output, duplicate ownership, secret leakage, and invalid detection. Generated runtimes cover deadlines, cancellation, panics/exceptions, malformed output, and response limits. A deterministic filesystem symlink-swap race harness remains open. |
+| Adversarial and property testing | Proven | Seeded fast-check suites cover single/monorepo configuration round trips, ASCII/Unicode platform paths, parser limits, aliases, duplicates, and hostile shapes. Compatibility fixtures contain malicious loaders, nondeterministic/oversized/unsafe output, duplicate ownership, secret leakage, and invalid detection. Generated runtimes cover deadlines, cancellation, panics/exceptions, malformed output, and response limits. A deterministic filesystem race harness swaps a verified ancestor for a symlink both before staging and before rename, proving fail-closed containment without an outside target write. |
 | CI | Partial | Linux and Node 22/24 run the full check; Windows, macOS, packaging, security, and release jobs are missing. |
 | Distribution and rollback | Missing | No publish workflow, provenance, package smoke test, SBOM, upgrade test, or rollback procedure exists. |
 | Public documentation | Partial | Architecture and extension notes exist; README installation, tutorials, recipes, API reference, troubleshooting, and release operations are incomplete. |
@@ -80,6 +80,11 @@ public compatibility kit, is signed with an ephemeral test key, and renders
 through the child-process adapter. Isolation tests cover secret-environment
 non-inheritance, the applied heap argument, stdout noise, timeouts, cancellation,
 input/output limits, and unsafe artifact paths.
+A deterministic atomic-write test seam now forces ancestor symlink substitution
+after directory verification and after temporary-file staging. The Node adapter
+canonicalizes the root, binds the staged file to the verified real parent, and
+revalidates that parent before rename; both interleavings reject without creating
+the requested path outside the workspace.
 
 ## 0.3 release gates
 

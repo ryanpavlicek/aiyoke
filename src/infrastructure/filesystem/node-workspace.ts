@@ -1,6 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  writeFile
+} from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { WorkspacePort } from "../../application/index.js";
 import { AiyokeError, compareCodePoints, safeRelativePath } from "../../core/index.js";
 
@@ -10,20 +20,49 @@ function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
+function inside(root: string, target: string): boolean {
+  const path = relative(root, target);
+  return path === "" || (!path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path));
+}
+
+function samePath(left: string, right: string): boolean {
+  return process.platform === "win32"
+    ? left.toLocaleLowerCase() === right.toLocaleLowerCase()
+    : left === right;
+}
+
+export type AtomicWriteCheckpoint = "directories-verified" | "temporary-staged";
+
+export interface NodeWorkspaceOptions {
+  readonly onAtomicWriteCheckpoint?: (
+    checkpoint: AtomicWriteCheckpoint,
+    context: { readonly path: string; readonly parent: string; readonly temporary?: string }
+  ) => Promise<void>;
+}
+
 export class NodeWorkspace implements WorkspacePort {
   readonly root: string;
   readonly files: readonly string[];
 
-  private constructor(root: string, files: readonly string[]) {
+  private constructor(
+    root: string,
+    files: readonly string[],
+    private readonly options: NodeWorkspaceOptions
+  ) {
     this.root = root;
     this.files = files;
   }
 
-  static async open(root: string): Promise<NodeWorkspace> {
+  static async open(root: string, options: NodeWorkspaceOptions = {}): Promise<NodeWorkspace> {
     const absoluteRoot = resolve(root);
     await mkdir(absoluteRoot, { recursive: true });
-    const files = await NodeWorkspace.#listFiles(absoluteRoot);
-    return new NodeWorkspace(absoluteRoot, files);
+    const rootMetadata = await lstat(absoluteRoot);
+    if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
+      throw new AiyokeError("INVALID_PATH", "Workspace root must be a real directory.");
+    }
+    const canonicalRoot = await realpath(absoluteRoot);
+    const files = await NodeWorkspace.#listFiles(canonicalRoot);
+    return new NodeWorkspace(canonicalRoot, files, options);
   }
 
   async read(path: string): Promise<string | undefined> {
@@ -61,13 +100,37 @@ export class NodeWorkspace implements WorkspacePort {
     const target = await this.#safeTarget(path);
     const parent = dirname(target);
     await this.#ensureDirectories(parent);
+    const verifiedParent = await this.#verifiedDirectory(parent, path);
+    await this.options.onAtomicWriteCheckpoint?.("directories-verified", { path, parent });
     const temporary = join(parent, `.aiyoke-${randomUUID()}.tmp`);
     try {
       await writeFile(temporary, content, { encoding: "utf8", flag: "wx" });
       if (executable) await chmod(temporary, 0o755);
+      const stagedPath = await realpath(temporary);
+      if (!inside(this.root, stagedPath) || !samePath(dirname(stagedPath), verifiedParent)) {
+        throw new AiyokeError(
+          "INVALID_PATH",
+          `Refusing atomic write after directory substitution for ${path}.`,
+          { path }
+        );
+      }
+      await this.options.onAtomicWriteCheckpoint?.("temporary-staged", {
+        path,
+        parent,
+        temporary
+      });
+      const currentParent = await this.#verifiedDirectory(parent, path);
+      if (!samePath(currentParent, verifiedParent)) {
+        throw new AiyokeError(
+          "INVALID_PATH",
+          `Refusing atomic write after directory substitution for ${path}.`,
+          { path }
+        );
+      }
       await rename(temporary, target);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
+      if (error instanceof AiyokeError) throw error;
       throw new AiyokeError("WORKSPACE_IO", `Could not write ${path} atomically.`, {
         path,
         cause: error instanceof Error ? error.message : String(error)
@@ -78,8 +141,7 @@ export class NodeWorkspace implements WorkspacePort {
   async #safeTarget(path: string): Promise<string> {
     const normalized = safeRelativePath(path);
     const target = resolve(this.root, ...normalized.split("/"));
-    const rootPrefix = `${this.root}${sep}`.toLocaleLowerCase();
-    if (!target.toLocaleLowerCase().startsWith(rootPrefix)) {
+    if (!inside(this.root, target) || samePath(target, this.root)) {
       throw new AiyokeError("INVALID_PATH", `Path ${path} escapes the workspace.`, { path });
     }
 
@@ -104,6 +166,18 @@ export class NodeWorkspace implements WorkspacePort {
       }
     }
     return target;
+  }
+
+  async #verifiedDirectory(directory: string, path: string): Promise<string> {
+    const metadata = await lstat(directory);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+      throw new AiyokeError("INVALID_PATH", `Path ${path} traverses a non-directory.`, { path });
+    }
+    const canonical = await realpath(directory);
+    if (!inside(this.root, canonical)) {
+      throw new AiyokeError("INVALID_PATH", `Path ${path} escapes the workspace.`, { path });
+    }
+    return canonical;
   }
 
   async #ensureDirectories(parent: string): Promise<void> {

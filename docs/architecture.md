@@ -45,7 +45,8 @@ pipeline:
    and produces a stable module order.
 3. **Plan** computes a deterministic, fingerprinted set of artifact operations.
 4. **Apply** writes only owned artifacts (or marked managed sections), using
-   atomic replacement and safe relative paths.
+   atomic replacement, a canonical workspace root, safe relative paths, and
+   real-parent identity checks before staging and rename.
 5. **Verify** checks generated artifacts and target-specific invariants.
 
 Enabled application-plane runtimes use the same rule. The compiler resolves one
@@ -93,10 +94,13 @@ engine, interfaces, or extension implementations.
 
 ## Trust and secrets
 
-An extension is executable code with the same local privileges as the process.
-Treat extension packages, hooks, MCP commands, and generated scripts as code:
-review their source, pin versions, and run them only in trusted workspaces.
-The registry validates metadata and dependencies, but it is not a sandbox.
+An extension is executable code. Treat extension packages, hooks, MCP commands,
+and generated scripts as code: review their source, pin versions, and run them
+only in trusted workspaces. The registry validates metadata and dependencies but
+is not a sandbox. Signed discovery adds integrity, publisher trust, revocation,
+and explicit consent. Optional renderer isolation reduces host-process authority
+but is not an OS sandbox; genuinely untrusted code still requires a container,
+VM, or equivalent platform policy.
 
 Secrets are never copied into generated artifacts. Providers refer to
 environment-variable names (for example, `OPENROUTER_API_KEY`), and generated
@@ -113,6 +117,8 @@ silently changing the canonical specification.
 ## Invariants
 
 - Paths entering generation are validated as safe, relative paths.
+- Atomic writes bind their staged file to the verified real parent and recheck
+  that parent before rename; ancestor symlink substitution fails closed.
 - Artifact ownership is explicit (`generated`, `managed-section`, or
   `user-owned`); user-owned content is never overwritten without a managed
   marker.
