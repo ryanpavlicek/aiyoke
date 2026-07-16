@@ -513,7 +513,10 @@ export type EvaluationCaseResult =
       readonly failureKind: string;
     })
   | (EvaluationCaseMetadata & { readonly status: "scorer-error"; readonly code: "scorer_error" })
-  | (EvaluationCaseMetadata & { readonly status: "skipped"; readonly reason: "not-sampled" });
+  | (EvaluationCaseMetadata & {
+      readonly status: "skipped";
+      readonly reason: "not-sampled" | "cancelled";
+    });
 
 export type EvaluationDelivery =
   | { readonly kind: "not-configured" }
@@ -546,8 +549,8 @@ export interface EvaluationRunnerOptions {
 
 function hash(value: string): number {
   let result = 2_166_136_261;
-  for (let index = 0; index < value.length; index += 1) {
-    result ^= value.charCodeAt(index);
+  for (const byte of new TextEncoder().encode(value)) {
+    result ^= byte;
     result = Math.imul(result, 16_777_619);
   }
   return result >>> 0;
@@ -622,6 +625,17 @@ export class EvaluationRunner {
     await Promise.all(
       Array.from({ length: Math.min(this.options.maxConcurrency, selected.length) }, worker)
     );
+    if (signal.aborted) {
+      for (const { item, index } of selected) {
+        if (results[index]?.status === "skipped") {
+          results[index] = {
+            ...this.#metadata(suite, item, 0),
+            status: "skipped",
+            reason: "cancelled"
+          };
+        }
+      }
+    }
     const executedResults = results.filter((result) => result.status !== "skipped");
     const scoredResults = executedResults.filter(
       (result): result is EvaluationCaseMetadata & { status: "passed" | "failed"; score: number } =>
@@ -856,6 +870,20 @@ test("samples online cases deterministically without invoking skipped cases", as
   assert.equal(calls, 0);
   assert.equal(report.executed, 0);
   assert.equal(report.skipped, 3);
+});
+
+test("distinguishes cancelled cases from sampling decisions", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const report = await new EvaluationRunner({ maxConcurrency: 1 }, registry()).run(
+    suite,
+    { invoke: async () => { throw new Error("must not run"); } },
+    controller.signal
+  );
+  assert.deepEqual(
+    report.results.map((result) => result.status === "skipped" ? result.reason : result.status),
+    ["cancelled", "cancelled", "cancelled"]
+  );
 });
 
 test("detects baseline regression and validates feedback scores", async () => {

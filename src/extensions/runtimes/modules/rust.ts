@@ -404,9 +404,7 @@ impl ToolRunner {
             let wait = (deadline - now).min(Duration::from_millis(5));
             match receiver.recv_timeout(wait) {
                 Ok(Ok(output)) => {
-                    match catch_unwind(AssertUnwindSafe(|| {
-                        tool.validate_output(output.as_ref())
-                    })) {
+                    match catch_unwind(AssertUnwindSafe(|| tool.validate_output(output.as_ref()))) {
                         Ok(Ok(())) => {
                             self.emit(&request, "tool-succeeded");
                             return ToolExecutionResult::Success {
