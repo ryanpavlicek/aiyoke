@@ -32,7 +32,11 @@ the explicit lazy-loading boundary and are not treated as static edges.
 
 ## Canonical source and lifecycle
 
-The project specification is the source of truth. Generated target files are
+The version-2 project specification is the source of truth. Its composition is
+a discriminated union: a single project owns one stack, while a monorepo owns a
+root stack plus identified, path-bound workspace stacks. The compiler aggregates
+registered extensions across that composition without adding language or
+framework conditionals to the core. Generated target files are
 projections, never a second configuration database. A normal run follows this
 pipeline:
 
@@ -43,6 +47,12 @@ pipeline:
 4. **Apply** writes only owned artifacts (or marked managed sections), using
    atomic replacement and safe relative paths.
 5. **Verify** checks generated artifacts and target-specific invariants.
+
+Schema evolution is a separate, explicit lifecycle. Adjacent reversible steps
+are registered in `SchemaMigrationRegistry`; normal loading never silently
+upgrades a document. Migration validates the complete destination before writing,
+creates a content-addressed backup, rechecks the source, and atomically replaces
+it. Downgrades require explicit consent and lossy transformations fail closed.
 
 The lifecycle is represented by discriminated unions in `src/core/model.ts`.
 Each stage is pure where possible; filesystem and process effects live in

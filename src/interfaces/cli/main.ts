@@ -2,17 +2,37 @@ import {
   AiyokeError,
   extensionId,
   type HarnessPlan,
+  type ProjectArchitecture,
   type VerificationFinding
 } from "../../core/index.js";
+import {
+  type ConfigPromptPort,
+  collectInteractiveConfiguration,
+  createNodeConfigPrompt
+} from "./interactive-config.js";
 
 interface CliOptions {
   readonly command: string;
   readonly root: string;
   readonly json: boolean;
   readonly force: boolean;
+  readonly dryRun: boolean;
+  readonly allowDowngrade: boolean;
+  readonly interactive: boolean;
+  readonly name?: string;
+  readonly architecture?: ProjectArchitecture;
+  readonly targetVersion?: number;
+  readonly backup?: string;
   readonly languages?: readonly string[];
   readonly frameworks?: readonly string[];
   readonly targets?: readonly string[];
+  readonly packs?: readonly string[];
+}
+
+export interface CliRuntime {
+  readonly inputIsTTY?: boolean;
+  readonly outputIsTTY?: boolean;
+  readonly prompt?: ConfigPromptPort;
 }
 
 const HELP = `aiyoke — deterministic AI harness compiler
@@ -25,10 +45,15 @@ Usage:
   aiyoke doctor
   aiyoke detect
   aiyoke list
+  aiyoke config [--name <name>] [--architecture layered] [--languages ...] [--frameworks ...] [--targets ...] [--packs ...]
+  aiyoke config --interactive
+  aiyoke migrate [--to <version>] [--dry-run] [--allow-downgrade]
+  aiyoke rollback --backup <path> [--dry-run]
 
 Global options:
   --root <path>    Workspace root (default: current directory)
   --json           Emit machine-readable JSON
+  --dry-run        Preview migration or rollback output without writing
   --help           Show this help
 `;
 
@@ -48,14 +73,40 @@ function optionValue(args: readonly string[], index: number, message: string): s
   return value;
 }
 
+function positiveInteger(value: string, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new AiyokeError("INVALID_SPEC", `${label} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function architecture(value: string): ProjectArchitecture {
+  if (value === "layered" || value === "hexagonal" || value === "clean" || value === "custom") {
+    return value;
+  }
+  throw new AiyokeError(
+    "INVALID_SPEC",
+    "--architecture must be layered, hexagonal, clean, or custom."
+  );
+}
+
 function parseArguments(args: readonly string[]): CliOptions {
   let command = "help";
   let root = process.cwd();
   let json = false;
   let force = false;
+  let dryRun = false;
+  let allowDowngrade = false;
+  let interactive = false;
+  let name: string | undefined;
+  let selectedArchitecture: ProjectArchitecture | undefined;
+  let targetVersion: number | undefined;
+  let backup: string | undefined;
   let languages: readonly string[] | undefined;
   let frameworks: readonly string[] | undefined;
   let targets: readonly string[] | undefined;
+  let packs: readonly string[] | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -63,6 +114,9 @@ function parseArguments(args: readonly string[]): CliOptions {
     if (argument === "--help" || argument === "-h") command = "help";
     else if (argument === "--json") json = true;
     else if (argument === "--force") force = true;
+    else if (argument === "--dry-run") dryRun = true;
+    else if (argument === "--allow-downgrade") allowDowngrade = true;
+    else if (argument === "--interactive") interactive = true;
     else if (argument === "--root") {
       const value = optionValue(args, index, "--root requires a path.");
       root = value;
@@ -79,6 +133,24 @@ function parseArguments(args: readonly string[]): CliOptions {
       const value = optionValue(args, index, "--targets requires a comma-separated list.");
       targets = splitList(value);
       index += 1;
+    } else if (argument === "--packs") {
+      const value = optionValue(args, index, "--packs requires a comma-separated list.");
+      packs = splitList(value);
+      index += 1;
+    } else if (argument === "--name") {
+      name = optionValue(args, index, "--name requires a project name.");
+      index += 1;
+    } else if (argument === "--architecture") {
+      const value = optionValue(args, index, "--architecture requires a value.");
+      selectedArchitecture = architecture(value);
+      index += 1;
+    } else if (argument === "--to") {
+      const value = optionValue(args, index, "--to requires a schema version.");
+      targetVersion = positiveInteger(value, "--to");
+      index += 1;
+    } else if (argument === "--backup") {
+      backup = optionValue(args, index, "--backup requires a path.");
+      index += 1;
     } else if (argument.startsWith("-")) {
       throw new AiyokeError("INVALID_SPEC", `Unknown option ${argument}.`);
     } else if (command === "help") command = argument;
@@ -88,9 +160,14 @@ function parseArguments(args: readonly string[]): CliOptions {
   const optional = {
     ...(languages === undefined ? {} : { languages }),
     ...(frameworks === undefined ? {} : { frameworks }),
-    ...(targets === undefined ? {} : { targets })
+    ...(targets === undefined ? {} : { targets }),
+    ...(packs === undefined ? {} : { packs }),
+    ...(name === undefined ? {} : { name }),
+    ...(selectedArchitecture === undefined ? {} : { architecture: selectedArchitecture }),
+    ...(targetVersion === undefined ? {} : { targetVersion }),
+    ...(backup === undefined ? {} : { backup })
   };
-  return { command, root, json, force, ...optional };
+  return { command, root, json, force, dryRun, allowDowngrade, interactive, ...optional };
 }
 
 function emit(value: unknown, json: boolean): void {
@@ -125,7 +202,31 @@ function findingsText(findings: readonly VerificationFinding[]): string {
     .join("\n");
 }
 
-export async function runCli(args = process.argv.slice(2)): Promise<number> {
+function migrationText(result: import("../../engine/index.js").MigrationExecutionResult): string {
+  if (!result.changed) return `schemaVersion ${result.toVersion} is already current.`;
+  const verb = result.operation === "migrate" ? "migrate" : "roll back";
+  if (result.dryRun) {
+    return `Would ${verb} schemaVersion ${result.fromVersion} to ${result.toVersion}.\n\n${result.output}`;
+  }
+  return [
+    `${result.operation === "migrate" ? "Migrated" : "Rolled back"} schemaVersion ${result.fromVersion} to ${result.toVersion}.`,
+    ...(result.backupPath === undefined ? [] : [`Recovery backup: ${result.backupPath}`])
+  ].join("\n");
+}
+
+function configurationText(result: import("../../engine/index.js").ConfigureResult): string {
+  if (!result.changed) return result.output;
+  if (result.dryRun) return `Would update aiyoke.yaml.\n\n${result.output}`;
+  return [
+    "Updated aiyoke.yaml.",
+    ...(result.backupPath === undefined ? [] : [`Recovery backup: ${result.backupPath}`])
+  ].join("\n");
+}
+
+export async function runCli(
+  args = process.argv.slice(2),
+  runtime: CliRuntime = {}
+): Promise<number> {
   let options: CliOptions | undefined;
   try {
     options = parseArguments(args);
@@ -209,6 +310,78 @@ export async function runCli(args = process.argv.slice(2)): Promise<number> {
               .join("\n"),
         options.json
       );
+      return 0;
+    }
+    if (options.command === "config") {
+      const hasFlags =
+        options.name !== undefined ||
+        options.architecture !== undefined ||
+        options.languages !== undefined ||
+        options.frameworks !== undefined ||
+        options.targets !== undefined ||
+        options.packs !== undefined;
+      if (options.interactive && hasFlags) {
+        throw new AiyokeError(
+          "INVALID_SPEC",
+          "--interactive cannot be combined with deterministic configuration flags."
+        );
+      }
+      if (options.interactive) {
+        const inputIsTTY = runtime.inputIsTTY ?? process.stdin.isTTY === true;
+        const outputIsTTY = runtime.outputIsTTY ?? process.stdout.isTTY === true;
+        if (!inputIsTTY || !outputIsTTY) {
+          throw new AiyokeError(
+            "INVALID_SPEC",
+            "Interactive configuration requires an input and output TTY. Use flags in automation."
+          );
+        }
+        const prompt = runtime.prompt ?? createNodeConfigPrompt();
+        try {
+          const collected = await collectInteractiveConfiguration(await engine.loadSpec(), prompt);
+          if (collected.kind === "cancelled") {
+            emit("Configuration unchanged.", false);
+            return 0;
+          }
+          const result = await engine.configure({ ...collected.options, dryRun: options.dryRun });
+          emit(options.json ? result : configurationText(result), options.json);
+          return 0;
+        } finally {
+          prompt.close();
+        }
+      }
+      const result = await engine.configure({
+        dryRun: options.dryRun || !hasFlags,
+        ...(options.name === undefined ? {} : { name: options.name }),
+        ...(options.architecture === undefined ? {} : { architecture: options.architecture }),
+        ...(options.languages === undefined
+          ? {}
+          : { languages: options.languages.map(extensionId) }),
+        ...(options.frameworks === undefined
+          ? {}
+          : { frameworks: options.frameworks.map(extensionId) }),
+        ...(options.targets === undefined
+          ? {}
+          : { targetAdapters: options.targets.map(extensionId) }),
+        ...(options.packs === undefined ? {} : { packs: options.packs.map(extensionId) })
+      });
+      emit(options.json ? result : configurationText(result), options.json);
+      return 0;
+    }
+    if (options.command === "migrate") {
+      const result = await engine.migrate({
+        dryRun: options.dryRun,
+        allowDowngrade: options.allowDowngrade,
+        ...(options.targetVersion === undefined ? {} : { targetVersion: options.targetVersion })
+      });
+      emit(options.json ? result : migrationText(result), options.json);
+      return 0;
+    }
+    if (options.command === "rollback") {
+      if (options.backup === undefined) {
+        throw new AiyokeError("INVALID_SPEC", "rollback requires --backup <path>.");
+      }
+      const result = await engine.rollbackMigration(options.backup, { dryRun: options.dryRun });
+      emit(options.json ? result : migrationText(result), options.json);
       return 0;
     }
     throw new AiyokeError("INVALID_SPEC", `Unknown command ${options.command}.`);

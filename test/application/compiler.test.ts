@@ -39,9 +39,9 @@ const hash: HashPort = {
 
 function spec(): HarnessSpec {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     project: { name: "example", architecture: "layered" },
-    stack: { languages: [], frameworks: [] },
+    composition: { kind: "single", stack: { languages: [], frameworks: [] } },
     targets: [
       {
         kind: "coding-agent",

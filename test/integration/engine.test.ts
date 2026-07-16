@@ -1,11 +1,15 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { stringify } from "yaml";
 import { AiyokeEngine } from "../../src/engine/index.js";
 import type { CapabilityPackExtension, ExtensionLoader } from "../../src/extension-sdk/index.js";
 import { createAiyoke, EXTENSION_API_VERSION, extensionId } from "../../src/index.js";
-import { stringifyHarnessSpec } from "../../src/infrastructure/config/index.js";
+import {
+  parseSchemaDocument,
+  stringifyHarnessSpec
+} from "../../src/infrastructure/config/index.js";
 
 const temporaryRoots: string[] = [];
 
@@ -16,6 +20,97 @@ afterEach(async () => {
 });
 
 describe("first-release workflow", () => {
+  it("previews, migrates, backs up, and rolls back schema v1", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aiyoke-migration-"));
+    temporaryRoots.push(root);
+    const initialEngine = await AiyokeEngine.open(root);
+    const current = (await initialEngine.initialize()).spec;
+    if (current.composition.kind !== "single") throw new Error("default must be single");
+    const legacy = stringify({
+      schemaVersion: 1,
+      project: current.project,
+      stack: current.composition.stack,
+      targets: current.targets,
+      packs: current.packs,
+      generation: current.generation
+    });
+    await writeFile(join(root, "aiyoke.yaml"), legacy, "utf8");
+
+    const engine = await AiyokeEngine.open(root);
+    await expect(engine.loadSpec()).rejects.toThrow(/aiyoke migrate/);
+    const preview = await engine.migrate({ dryRun: true });
+    expect(preview).toMatchObject({
+      operation: "migrate",
+      fromVersion: 1,
+      toVersion: 2,
+      changed: true,
+      dryRun: true
+    });
+    expect(await readFile(join(root, "aiyoke.yaml"), "utf8")).toBe(legacy);
+
+    const migrated = await engine.migrate();
+    expect(migrated.backupPath).toMatch(/^\.aiyoke\/backups\/aiyoke\.v1-/);
+    expect(
+      parseSchemaDocument(await readFile(join(root, "aiyoke.yaml"), "utf8")).schemaVersion
+    ).toBe(2);
+    if (migrated.backupPath === undefined) throw new Error("migration backup missing");
+    expect(await readFile(join(root, migrated.backupPath), "utf8")).toBe(legacy);
+
+    const rollbackPreview = await engine.rollbackMigration(migrated.backupPath, { dryRun: true });
+    expect(rollbackPreview).toMatchObject({ operation: "rollback", changed: true, dryRun: true });
+    const rolledBack = await engine.rollbackMigration(migrated.backupPath);
+    expect(rolledBack.backupPath).toMatch(/^\.aiyoke\/backups\/aiyoke\.v2-/);
+    expect(await readFile(join(root, "aiyoke.yaml"), "utf8")).toBe(legacy);
+  });
+
+  it("refuses corrupt migrations and implicit or lossy downgrades", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aiyoke-migration-invalid-"));
+    temporaryRoots.push(root);
+    const engine = await AiyokeEngine.open(root);
+    const current = (await engine.initialize()).spec;
+    const currentSource = await readFile(join(root, "aiyoke.yaml"), "utf8");
+
+    await expect(engine.migrate({ targetVersion: 1 })).rejects.toThrow(/explicit permission/);
+    const downgraded = await engine.migrate({ targetVersion: 1, allowDowngrade: true });
+    expect(downgraded.toVersion).toBe(1);
+    expect(
+      parseSchemaDocument(await readFile(join(root, "aiyoke.yaml"), "utf8")).schemaVersion
+    ).toBe(1);
+
+    await writeFile(
+      join(root, "aiyoke.yaml"),
+      stringify({ schemaVersion: 1, project: current.project }),
+      "utf8"
+    );
+    const corrupt = await AiyokeEngine.open(root);
+    const before = await readFile(join(root, "aiyoke.yaml"), "utf8");
+    await expect(corrupt.migrate()).rejects.toThrow(/stack must be an object/);
+    expect(await readFile(join(root, "aiyoke.yaml"), "utf8")).toBe(before);
+
+    await writeFile(
+      join(root, "aiyoke.yaml"),
+      stringifyHarnessSpec({
+        ...current,
+        composition: {
+          kind: "monorepo",
+          root: { languages: [], frameworks: [] },
+          workspaces: [
+            {
+              id: extensionId("api"),
+              path: "apps/api",
+              stack: { languages: [extensionId("go")], frameworks: [] }
+            }
+          ]
+        }
+      }),
+      "utf8"
+    );
+    await expect(
+      (await AiyokeEngine.open(root)).migrate({ targetVersion: 1, allowDowngrade: true })
+    ).rejects.toThrow(/cannot be represented/);
+    expect(currentSource).toContain("schemaVersion: 2");
+  });
+
   it("initializes, previews, applies, checks, and reapplies without changes", async () => {
     const root = await mkdtemp(join(tmpdir(), "aiyoke-"));
     temporaryRoots.push(root);
@@ -95,8 +190,10 @@ describe("first-release workflow", () => {
     expect(detectedIds).toContain("nextjs");
 
     const initialized = await engine.initialize();
-    expect(initialized.spec.stack.languages).toContain("typescript");
-    expect(initialized.spec.stack.frameworks).toContain("nextjs");
+    expect(initialized.spec.composition).toEqual({
+      kind: "single",
+      stack: { languages: ["typescript"], frameworks: ["nextjs"] }
+    });
     expect((await engine.initialize()).created).toBe(false);
     expect((await engine.doctor()).some((finding) => finding.code === "GENERATED_DRIFT")).toBe(
       true
@@ -111,7 +208,10 @@ describe("first-release workflow", () => {
       languages: [extensionId("go")],
       frameworks: []
     });
-    expect(forced.spec.stack).toEqual({ languages: ["go"], frameworks: [] });
+    expect(forced.spec.composition).toEqual({
+      kind: "single",
+      stack: { languages: ["go"], frameworks: [] }
+    });
   });
 
   it("reports absent configuration and empty selections", async () => {
@@ -125,7 +225,7 @@ describe("first-release workflow", () => {
       join(root, "aiyoke.yaml"),
       stringifyHarnessSpec({
         ...initialized.spec,
-        stack: { languages: [], frameworks: [] },
+        composition: { kind: "single", stack: { languages: [], frameworks: [] } },
         targets: []
       }),
       "utf8"
@@ -155,5 +255,49 @@ describe("first-release workflow", () => {
         targetAdapters: [extensionId("codex"), extensionId("codex")]
       })
     ).rejects.toThrow(/cannot contain duplicates/);
+  });
+
+  it("previews and applies validated non-destructive configuration updates", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aiyoke-config-"));
+    temporaryRoots.push(root);
+    const engine = await AiyokeEngine.open(root);
+    await engine.initialize();
+    const before = await readFile(join(root, "aiyoke.yaml"), "utf8");
+    const preview = await engine.configure({
+      name: "renamed",
+      architecture: "clean",
+      languages: [extensionId("go")],
+      frameworks: [extensionId("gin")],
+      targetAdapters: [extensionId("codex"), extensionId("openrouter")],
+      dryRun: true
+    });
+    expect(preview).toMatchObject({ changed: true, dryRun: true });
+    expect(await readFile(join(root, "aiyoke.yaml"), "utf8")).toBe(before);
+
+    const configured = await engine.configure({
+      name: "renamed",
+      architecture: "clean",
+      languages: [extensionId("go")],
+      frameworks: [extensionId("gin")],
+      targetAdapters: [extensionId("codex"), extensionId("openrouter")]
+    });
+    expect(configured.backupPath).toMatch(/^\.aiyoke\/backups\/aiyoke\.v2-/);
+    expect(configured.spec).toMatchObject({
+      project: { name: "renamed", architecture: "clean" },
+      composition: {
+        kind: "single",
+        stack: { languages: ["go"], frameworks: ["gin"] }
+      }
+    });
+    expect(configured.spec.targets.map((target) => target.adapter)).toEqual([
+      "codex",
+      "openrouter"
+    ]);
+
+    const configuredSource = await readFile(join(root, "aiyoke.yaml"), "utf8");
+    await expect(
+      engine.configure({ languages: [extensionId("missing-language")] })
+    ).rejects.toThrow(/not registered/);
+    expect(await readFile(join(root, "aiyoke.yaml"), "utf8")).toBe(configuredSource);
   });
 });

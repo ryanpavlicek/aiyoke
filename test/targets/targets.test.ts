@@ -34,9 +34,9 @@ const moduleFixture: HarnessModule = {
 };
 
 const baseSpec: HarnessSpec = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   project: { name: "demo", architecture: "clean" },
-  stack: { languages: [], frameworks: [] },
+  composition: { kind: "single", stack: { languages: [], frameworks: [] } },
   targets: [],
   packs: [],
   generation: { sourceDirectory: ".aiyoke", lockFile: ".aiyoke/lock.json", lineEndings: "lf" }

@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Schema version 2 with discriminated single-project and monorepo composition.
+- A registry-driven, reversible schema migration lifecycle with dry-run,
+  explicit downgrade consent, content-addressed backups, and atomic rollback.
+- Deterministic `config` flags and a confirmation-gated TTY-only interactive
+  editor that preserve the source on cancellation or invalid input.
+- Property-based and adversarial configuration suites covering round trips,
+  paths, parser resource limits, aliases, duplicate fields, and hostile shapes.
+- Evidence-based 0.3 release gates and a production runtime-harness contract.
+
 ## 0.1.0 — 2026-07-16
 
 ### Added

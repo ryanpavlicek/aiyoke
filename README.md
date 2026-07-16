@@ -27,6 +27,7 @@ written into generated files.
 pnpm install
 pnpm build
 node dist/cli.js init
+node dist/cli.js config --languages typescript --frameworks nextjs --targets claude-code,codex,openrouter --dry-run
 node dist/cli.js plan
 node dist/cli.js apply
 node dist/cli.js check
@@ -38,6 +39,12 @@ surface when needed:
 ```sh
 node dist/cli.js init --targets claude-code,codex,openrouter
 ```
+
+Edit an existing specification deterministically with `aiyoke config` flags, or
+use `aiyoke config --interactive` from a TTY. Preview either mode with
+`--dry-run`. Older specifications are upgraded one version at a time with
+`aiyoke migrate --dry-run` and `aiyoke migrate`; every write reports a
+content-addressed recovery backup accepted by `aiyoke rollback --backup <path>`.
 
 `plan` is read-only. `apply` uses same-directory atomic replacement, rejects unsafe paths and
 symlink traversal, and produces `.aiyoke/lock.json` for deterministic drift checks. Repeating
@@ -56,7 +63,11 @@ pnpm dev --help
 ```
 
 See `docs/architecture.md`, `docs/extensions.md`, and `docs/compatibility.md` for
-design, extension contracts, and the tested support matrix.
+design, extension contracts, and the tested support matrix. Public-release work
+is tracked through evidence-based gates in `docs/release-readiness.md`. The
+generated production capabilities and their product boundary are specified in
+`docs/runtime-harness-contract.md`. Configuration schema, editing, migration,
+and recovery are documented in `docs/configuration.md`.
 
 ## License
 

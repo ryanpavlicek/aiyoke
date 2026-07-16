@@ -82,8 +82,10 @@ describe("dogfood project matrix", () => {
     );
 
     const initialized = await engine.initialize();
-    expect(initialized.spec.stack.languages).toEqual([fixture.language]);
-    expect(initialized.spec.stack.frameworks).toEqual([fixture.framework]);
+    expect(initialized.spec.composition).toEqual({
+      kind: "single",
+      stack: { languages: [fixture.language], frameworks: [fixture.framework] }
+    });
 
     const plan = await engine.plan();
     expect(plan.operations.every((operation) => operation.kind === "create")).toBe(true);

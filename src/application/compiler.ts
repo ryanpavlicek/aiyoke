@@ -1,6 +1,7 @@
 import {
   AiyokeError,
   type ArtifactIntent,
+  aggregateHarnessStack,
   compareCodePoints,
   type HarnessModule,
   type HarnessPlan,
@@ -288,9 +289,10 @@ export class HarnessCompiler {
   }
 
   async #resolveModules(spec: HarnessSpec): Promise<readonly HarnessModule[]> {
+    const stack = aggregateHarnessStack(spec.composition);
     const references: ExtensionReference[] = [
-      ...spec.stack.languages.map((id) => ({ kind: "language" as const, id })),
-      ...spec.stack.frameworks.map((id) => ({ kind: "framework" as const, id })),
+      ...stack.languages.map((id) => ({ kind: "language" as const, id })),
+      ...stack.frameworks.map((id) => ({ kind: "framework" as const, id })),
       ...spec.packs.map((id) => ({ kind: "pack" as const, id }))
     ];
     const resolved = await this.registry.resolve(references);

@@ -3,11 +3,13 @@ export type {
   HarnessModule,
   HarnessPlan,
   HarnessSpec,
+  MonorepoWorkspace,
   PlanOperation,
+  ProjectComposition,
   TargetSpec,
   VerificationFinding
 } from "./core/index.js";
-export { AiyokeError, extensionId, safeRelativePath } from "./core/index.js";
+export { AiyokeError, aggregateHarnessStack, extensionId, safeRelativePath } from "./core/index.js";
 export type {
   AiyokeExtension,
   CapabilityPackExtension,

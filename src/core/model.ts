@@ -13,6 +13,31 @@ export interface HarnessStack {
   readonly frameworks: readonly ExtensionId[];
 }
 
+export interface MonorepoWorkspace {
+  readonly id: ExtensionId;
+  readonly path: string;
+  readonly stack: HarnessStack;
+}
+
+export type ProjectComposition =
+  | { readonly kind: "single"; readonly stack: HarnessStack }
+  | {
+      readonly kind: "monorepo";
+      readonly root: HarnessStack;
+      readonly workspaces: readonly MonorepoWorkspace[];
+    };
+
+export function aggregateHarnessStack(composition: ProjectComposition): HarnessStack {
+  const stacks =
+    composition.kind === "single"
+      ? [composition.stack]
+      : [composition.root, ...composition.workspaces.map((workspace) => workspace.stack)];
+  return {
+    languages: [...new Set(stacks.flatMap((stack) => stack.languages))],
+    frameworks: [...new Set(stacks.flatMap((stack) => stack.frameworks))]
+  };
+}
+
 export type AgentFeature =
   | "instructions"
   | "skills"
@@ -71,9 +96,9 @@ export interface GenerationPolicy {
 }
 
 export interface HarnessSpec {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly project: ProjectIdentity;
-  readonly stack: HarnessStack;
+  readonly composition: ProjectComposition;
   readonly targets: readonly TargetSpec[];
   readonly packs: readonly ExtensionId[];
   readonly generation: GenerationPolicy;

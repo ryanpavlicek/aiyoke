@@ -1,8 +1,10 @@
 # Release roadmap
 
-The roadmap is directional: each release is shipped only when its invariants,
-fixtures, and documentation are complete. Dates beyond the implemented first
-release are intentionally omitted.
+The roadmap is acceptance-gated: each release ships only when its invariants,
+fixtures, security checks, distribution checks, and documentation are complete.
+Version 0.3 is the first public-ready release. Version 1.0 stabilizes contracts
+after public field use rather than serving as the first usable build. See
+`docs/release-readiness.md` for the evidence required at each gate.
 
 ## 0.1 — first release (current)
 
@@ -20,14 +22,25 @@ release are intentionally omitted.
 ## 0.2 — composition hardening
 
 - Expand golden fixtures from representative projects into polyglot monorepos.
-- Add interactive configuration editing and schema migration commands.
-- Add extension compatibility fixtures and schema migration tooling.
+- Add deterministic interactive and non-interactive configuration editing.
+- Add versioned, reversible schema migration commands and fixtures.
+- Add extension compatibility fixtures and a standalone compatibility runner.
+- Add property-based and adversarial coverage for configuration, paths,
+  extension graphs, artifact ownership, and filesystem boundaries.
+- Define a provider-neutral runtime-harness domain contract and generate the
+  first reliability, observability, evaluation, safety, and budget primitives.
 
 ## 0.3 — extension ecosystem
 
 - Add signed third-party extension discovery without expanding core dependencies.
 - Publish extension-authoring examples and a standalone compatibility test harness.
 - Add optional process isolation for untrusted third-party renderers.
+- Complete cross-platform CI/CD, package provenance, release rollback, security
+  review, installation verification, and public documentation.
+- Verify every promised AI target, language, and framework through reproducible
+  compatibility evidence before publishing.
+- Complete and verify the seven production runtime capability families in
+  `docs/runtime-harness-contract.md` across supported language templates.
 
 ## 1.0 — stable contracts
 

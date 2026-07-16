@@ -35,7 +35,7 @@ describe("YAML configuration", () => {
 
   it("rejects invalid top-level and generation variants", () => {
     const invalidSources = [
-      stringify({ ...defaultHarnessSpec("example"), schemaVersion: 2 }),
+      stringify({ ...defaultHarnessSpec("example"), schemaVersion: 3 }),
       stringify({
         ...defaultHarnessSpec("example"),
         project: { name: "example", architecture: "unknown" }
@@ -59,7 +59,10 @@ describe("YAML configuration", () => {
       }),
       stringify({
         ...defaultHarnessSpec("example"),
-        stack: { languages: ["python", "python"], frameworks: [] }
+        composition: {
+          kind: "single",
+          stack: { languages: ["python", "python"], frameworks: [] }
+        }
       })
     ];
     for (const source of invalidSources) expect(() => parseHarnessSpec(source)).toThrow();
@@ -111,8 +114,8 @@ describe("YAML configuration", () => {
     const base = defaultHarnessSpec("example");
     const target = base.targets[0];
     expect(target).toBeDefined();
-    expect(() => parseHarnessSpec(stringify({ ...base, targets: [target, target] }))).toThrow(
-      /duplicate/
-    );
+    expect(() =>
+      parseHarnessSpec(stringify({ ...base, targets: [target, structuredClone(target)] }))
+    ).toThrow(/duplicate/);
   });
 });
