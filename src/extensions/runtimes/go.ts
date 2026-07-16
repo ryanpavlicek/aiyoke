@@ -419,8 +419,8 @@ func (runtime *HarnessRuntime) executeWithCapacity(
 		}
 		if !approved {
 			return runtime.finishFailure(ctx, request, ModelFailure{
-				Kind: FailureApprovalRequired,
-				Message: "the configured human approval was not granted",
+				Kind:      FailureApprovalRequired,
+				Message:   "the configured human approval was not granted",
 				Retryable: false,
 			})
 		}
@@ -446,8 +446,8 @@ func (runtime *HarnessRuntime) executeWithCapacity(
 		adapter, exists := runtime.deps.Adapters.Get(route)
 		if !exists {
 			finalFailure = ModelFailure{
-				Kind: FailureProvider,
-				Message: "no adapter is registered for route " + route,
+				Kind:      FailureProvider,
+				Message:   "no adapter is registered for route " + route,
 				Retryable: false,
 			}
 			continue
@@ -455,8 +455,8 @@ func (runtime *HarnessRuntime) executeWithCapacity(
 		circuit := runtime.circuit(route)
 		if !circuit.Allow(runtime.deps.Clock()) {
 			finalFailure = ModelFailure{
-				Kind: FailureCircuitOpen,
-				Message: "the circuit is open for route " + route,
+				Kind:      FailureCircuitOpen,
+				Message:   "the circuit is open for route " + route,
 				Retryable: true,
 			}
 			continue
@@ -490,8 +490,8 @@ func (runtime *HarnessRuntime) executeWithCapacity(
 				if runtime.options.MaxEstimatedCostUSD != nil &&
 					success.Usage.EstimatedCostUSD > *runtime.options.MaxEstimatedCostUSD {
 					return runtime.finishFailure(ctx, request, ModelFailure{
-						Kind: FailureBudgetExhausted,
-						Message: "the result exceeds its configured cost budget",
+						Kind:      FailureBudgetExhausted,
+						Message:   "the result exceeds its configured cost budget",
 						Retryable: false,
 					})
 				}
@@ -501,7 +501,7 @@ func (runtime *HarnessRuntime) executeWithCapacity(
 					_ = runtime.deps.Cache.Set(ctx, executeOptions.CacheKey, value)
 				}
 				runtime.emit(ctx, "request-succeeded", request, map[string]any{
-					"usage": success.Usage,
+					"usage":      success.Usage,
 					"latency_ms": max(0, runtime.deps.Clock().Sub(startedAt).Milliseconds()),
 				})
 				runtime.record(ctx, request, completed)
@@ -663,11 +663,11 @@ func (runtime *HarnessRuntime) emit(
 	}
 	sort.Strings(metadataKeys)
 	event := map[string]any{
-		"type": eventType,
-		"request_id": request.ID,
-		"occurred_at": runtime.deps.Clock(),
+		"type":           eventType,
+		"request_id":     request.ID,
+		"occurred_at":    runtime.deps.Clock(),
 		"prompt_version": request.PromptVersion,
-		"metadata_keys": metadataKeys,
+		"metadata_keys":  metadataKeys,
 	}
 	for key, value := range details {
 		event[key] = value
@@ -687,16 +687,16 @@ import (
 
 func testOptions() RuntimeOptions {
 	return RuntimeOptions{
-		Timeout: time.Second,
-		Retry: RetryOptions{MaxAttempts: 2, BaseDelay: 10 * time.Millisecond, MaxDelay: 100 * time.Millisecond},
-		FallbackRoutes: []string{"fallback"},
-		MaxRepairAttempts: 1,
-		MaxInputTokens: 100,
-		MaxOutputTokens: 100,
-		MaxConcurrency: 2,
-		MaxBatchSize: 4,
+		Timeout:                 time.Second,
+		Retry:                   RetryOptions{MaxAttempts: 2, BaseDelay: 10 * time.Millisecond, MaxDelay: 100 * time.Millisecond},
+		FallbackRoutes:          []string{"fallback"},
+		MaxRepairAttempts:       1,
+		MaxInputTokens:          100,
+		MaxOutputTokens:         100,
+		MaxConcurrency:          2,
+		MaxBatchSize:            4,
 		CircuitFailureThreshold: 3,
-		CircuitResetAfter: time.Second,
+		CircuitResetAfter:       time.Second,
 	}
 }
 
@@ -808,10 +808,10 @@ func TestRuntimeRetryFallbackRepairAndRedactedEvents(t *testing.T) {
 	now := time.Unix(100, 0)
 	runtime, err := NewHarnessRuntime(testOptions(), RuntimeDependencies{
 		Adapters: registry,
-		Events: events,
-		Repair: answerRepair{},
-		Clock: func() time.Time { return now },
-		Random: func() float64 { return 0 },
+		Events:   events,
+		Repair:   answerRepair{},
+		Clock:    func() time.Time { return now },
+		Random:   func() float64 { return 0 },
 		Sleep: func(_ context.Context, delay time.Duration) error {
 			delays = append(delays, delay)
 			return nil
