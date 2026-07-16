@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import ts from "typescript";
+import * as ts from "typescript";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 const EXTENSION_CATEGORIES = new Set(["targets", "languages", "frameworks", "packs"]);
