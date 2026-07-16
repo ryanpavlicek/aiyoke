@@ -20,9 +20,27 @@ export interface RuntimeTemplateDefinition {
   readonly source: string;
   readonly testFileName: string;
   readonly testSource: string;
+  readonly integrations?: readonly FrameworkIntegrationDefinition[];
 }
 
-function readme(definition: RuntimeTemplateDefinition): string {
+export interface FrameworkIntegrationDefinition {
+  readonly framework: string;
+  readonly path: string;
+  readonly source: string;
+}
+
+function readme(
+  definition: RuntimeTemplateDefinition,
+  integrations: readonly FrameworkIntegrationDefinition[]
+): string {
+  const integrationGuidance =
+    integrations.length === 0
+      ? "No framework integration was selected for this scope."
+      : `Selected framework integrations: ${integrations
+          .map((integration) => `\`${integration.framework}\``)
+          .join(
+            ", "
+          )}. Thin adapters are under \`integrations/\` and depend on the stable runtime facade.`;
   return `# Aiyoke ${definition.displayName} runtime template
 
 This generated directory is owned by Aiyoke. It contains an executable,
@@ -36,6 +54,8 @@ guard, and approval adapters at the application boundary.
 The generated ${definition.testFileName} is a native conformance starting point.
 Keep it running as the runtime is integrated and extend it with provider failure,
 timeout, malformed-output, cancellation, and concurrency cases.
+
+${integrationGuidance}
 
 Do not place credentials in this directory. Provider adapters must read secrets
 from the environment or the consuming application's secret manager.
@@ -84,11 +104,16 @@ export function createRuntimeTemplate(
         source: descriptor.id,
         executable: false
       });
+      const selectedFrameworks = new Set(scope.stack.frameworks);
+      const integrations = (definition.integrations ?? []).filter((integration) =>
+        selectedFrameworks.has(extensionId(integration.framework))
+      );
       return [
         artifact(definition.fileName, definition.source),
         artifact(definition.testFileName, definition.testSource),
         artifact("policy.json", policyJson(resolveRuntimePolicy(runtime.profile))),
-        artifact("README.md", readme(definition))
+        artifact("README.md", readme(definition, integrations)),
+        ...integrations.map((integration) => artifact(integration.path, integration.source))
       ];
     }
   });

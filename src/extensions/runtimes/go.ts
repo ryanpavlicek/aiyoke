@@ -1,3 +1,4 @@
+import { goIntegrations } from "./integrations/go.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
 const SOURCE = `package aiyokeruntime
@@ -936,7 +937,8 @@ export const goRuntime = createRuntimeTemplate({
   fileName: "runtime.go",
   source: SOURCE,
   testFileName: "runtime_test.go",
-  testSource: TEST_SOURCE
+  testSource: TEST_SOURCE,
+  integrations: goIntegrations
 });
 
 export function createGoRuntimeLoader() {

@@ -1,3 +1,4 @@
+import { typeScriptIntegrations } from "./integrations/typescript.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
 const SOURCE = `export type FailureKind =
@@ -846,7 +847,8 @@ export const typescriptRuntime = createRuntimeTemplate({
   fileName: "runtime.ts",
   source: SOURCE,
   testFileName: "runtime.test.ts",
-  testSource: TEST_SOURCE
+  testSource: TEST_SOURCE,
+  integrations: typeScriptIntegrations
 });
 
 export function createTypeScriptRuntimeLoader() {

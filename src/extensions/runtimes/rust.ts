@@ -1,3 +1,4 @@
+import { rustIntegrations } from "./integrations/rust.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
 const SOURCE = `use std::collections::BTreeMap;
@@ -1277,7 +1278,8 @@ export const rustRuntime = createRuntimeTemplate({
   fileName: "runtime.rs",
   source: SOURCE,
   testFileName: "runtime_test.rs",
-  testSource: TEST_SOURCE
+  testSource: TEST_SOURCE,
+  integrations: rustIntegrations
 });
 
 export function createRustRuntimeLoader() {

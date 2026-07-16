@@ -21,6 +21,52 @@ const testFileNames = new Map([
   ["rust", "runtime_test.rs"]
 ]);
 
+const frameworkIntegrations: ReadonlyMap<
+  string,
+  readonly (readonly [framework: string, path: string])[]
+> = new Map([
+  [
+    "typescript",
+    [
+      ["nextjs", "integrations/nextjs.ts"],
+      ["nestjs", "integrations/nestjs.ts"],
+      ["fastify", "integrations/fastify.ts"],
+      ["express", "integrations/express.ts"]
+    ]
+  ],
+  [
+    "javascript",
+    [
+      ["nextjs", "integrations/nextjs.js"],
+      ["fastify", "integrations/fastify.js"],
+      ["express", "integrations/express.js"]
+    ]
+  ],
+  [
+    "python",
+    [
+      ["fastapi", "fastapi_aiyoke.py"],
+      ["django", "django_aiyoke.py"],
+      ["flask", "flask_aiyoke.py"]
+    ]
+  ],
+  [
+    "go",
+    [
+      ["chi", "chi_aiyoke.go"],
+      ["gin", "gin_aiyoke.go"],
+      ["fiber", "fiber_aiyoke.go"]
+    ]
+  ],
+  [
+    "rust",
+    [
+      ["axum", "axum_aiyoke.rs"],
+      ["actix", "actix_aiyoke.rs"]
+    ]
+  ]
+]);
+
 const workspace = {
   root: "/workspace",
   files: [] as readonly string[],
@@ -112,6 +158,42 @@ describe("runtime template extensions", () => {
       }
     });
     expect(artifacts[0]?.path).toBe("services/api/aiyoke-runtime/python/runtime.py");
+  });
+
+  it("renders only registered framework adapters for the selected language scope", async () => {
+    for (const runtime of await loadedRuntimes()) {
+      const language = runtime.descriptor.language;
+      const integrations = frameworkIntegrations.get(language);
+      if (integrations === undefined) throw new Error(`${language} integrations missing`);
+      const spec = {
+        ...defaultHarnessSpec("framework-runtime"),
+        composition: {
+          kind: "single" as const,
+          stack: {
+            languages: [language],
+            frameworks: integrations.map(([framework]) => extensionId(framework))
+          }
+        }
+      };
+      if (spec.runtime.kind !== "enabled") throw new Error("runtime must be enabled");
+      const artifacts = await runtime.render({
+        spec,
+        workspace,
+        runtime: spec.runtime,
+        scope: { kind: "project", stack: spec.composition.stack }
+      });
+      expect(artifacts.slice(4).map((artifact) => artifact.path)).toEqual(
+        integrations.map(([, path]) => `aiyoke-runtime/${language}/${path}`)
+      );
+      for (const artifact of artifacts.slice(4)) {
+        expect(artifact.content).not.toMatch(/\bTODO\b/i);
+        expect(artifact.content).toMatch(/HarnessRuntime|runtime\.execute|runtime\.Execute/);
+      }
+      const guidance = artifacts.find((artifact) => artifact.path.endsWith("README.md"));
+      for (const [framework] of integrations) {
+        expect(guidance?.content).toContain(`\`${framework}\``);
+      }
+    }
   });
 
   it("emits valid TypeScript and executable deterministic JavaScript primitives", async () => {
