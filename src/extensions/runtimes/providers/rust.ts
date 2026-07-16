@@ -155,7 +155,11 @@ impl ResponsesApiAdapter {
         if config.timeout.is_zero() {
             return Err("timeout must be positive".to_owned());
         }
-        Ok(Self { config, secrets, transport })
+        Ok(Self {
+            config,
+            secrets,
+            transport,
+        })
     }
 }
 
@@ -192,7 +196,12 @@ fn redact(value: &str, secret: &str) -> String {
     }
 }
 
-fn failure(message: &str, retryable: bool, code: &str, secret: &str) -> ModelResult<ResponsesOutput> {
+fn failure(
+    message: &str,
+    retryable: bool,
+    code: &str,
+    secret: &str,
+) -> ModelResult<ResponsesOutput> {
     ModelResult::Failure(ModelFailure {
         kind: FailureKind::Provider,
         message: redact(message, secret),
@@ -308,10 +317,10 @@ pub fn register_responses_adapter(
 }
 `;
 
-const tests = `#[path = "runtime.rs"]
-mod runtime;
-#[path = "responses_provider.rs"]
+const tests = `#[path = "responses_provider.rs"]
 mod responses_provider;
+#[path = "runtime.rs"]
+mod runtime;
 
 use responses_provider::*;
 use runtime::{
@@ -383,7 +392,8 @@ fn maps_output_usage_and_registration() {
         response: success_response(),
         authorization: Mutex::new(String::new()),
     });
-    let mut config = ResponsesAdapterConfig::for_provider(ResponsesProvider::OpenRouter, "test/model");
+    let mut config =
+        ResponsesAdapterConfig::for_provider(ResponsesProvider::OpenRouter, "test/model");
     config.input_cost_per_million_tokens = 1.0;
     config.output_cost_per_million_tokens = 2.0;
     let mut registry = AdapterRegistry::new();
@@ -402,7 +412,10 @@ fn maps_output_usage_and_registration() {
         }
         ModelResult::Failure(failure) => panic!("unexpected failure: {}", failure.message),
     }
-    assert_eq!(*transport.authorization.lock().unwrap(), "Bearer test-secret");
+    assert_eq!(
+        *transport.authorization.lock().unwrap(),
+        "Bearer test-secret"
+    );
 }
 
 #[test]
@@ -449,7 +462,10 @@ fn fails_closed_for_missing_credentials_and_unsafe_endpoints() {
     .unwrap();
     match adapter.invoke(&request(), &context()) {
         ModelResult::Failure(failure) => {
-            assert_eq!(failure.provider_code.as_deref(), Some("missing_credentials"));
+            assert_eq!(
+                failure.provider_code.as_deref(),
+                Some("missing_credentials")
+            );
         }
         ModelResult::Success { .. } => panic!("expected a failure"),
     }
