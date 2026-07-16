@@ -53,8 +53,11 @@ Selecting OpenRouter or the xAI API emits registered Responses API adapters and
 native mock tests in all five languages. TypeScript, JavaScript, Python, and Go
 ship an HTTP implementation; Rust ships the stable transport port and adapter
 template because its standard library has no HTTPS client. Live paid-provider
-smoke tests and the broader malformed-response/size-limit matrix remain release
-gates rather than default CI behavior.
+calls are excluded from default CI. The opt-in `pnpm test:live` command exercises
+the generated OpenRouter adapter with an environment-injected credential. All
+five native suites reject malformed and oversized responses; the Rust transport
+port carries and verifies the same byte-limit contract without selecting a TLS
+crate.
 
 ## Dogfood acceptance matrix
 

@@ -31,7 +31,7 @@ that does not cover the stated scope are not completion evidence.
 | CI | Partial | Linux and Node 22/24 run the full check; Windows, macOS, packaging, security, and release jobs are missing. |
 | Distribution and rollback | Missing | No publish workflow, provenance, package smoke test, SBOM, upgrade test, or rollback procedure exists. |
 | Public documentation | Partial | Architecture and extension notes exist; README installation, tutorials, recipes, API reference, troubleshooting, and release operations are incomplete. |
-| Production runtime templates | Partial | All five registered templates generate a standard-library execution facade with adapter/guard registries, typed lifecycle state, deadlines/cancellation, retry/fallback/circuit breaking, validation/repair, redacted events, approval, cache/evaluation ports, budgets, and bounded batch concurrency. Registered tooling modules add validation, approval, deadlines/cancellation, redacted events, and exception/panic containment. Registered evaluation modules add versioned offline/sampled suites, bounded concurrency, reproducibility metadata, report/feedback ports, and regression decisions. Generated native suites pass Node, TypeScript, Python, Go, and Rust compiler/formatter gates. Framework adapters compile/import against pinned real dependencies. Registered OpenRouter/xAI Responses adapters include native mock tests in every language; Rust uses the documented typed transport port. Live opt-in smoke coverage, response-size adversarial coverage, and the remaining contract matrix are still open. |
+| Production runtime templates | Partial | All five registered templates generate a standard-library execution facade with adapter/guard registries, typed lifecycle state, deadlines/cancellation, retry/fallback/circuit breaking, validation/repair, redacted events, approval, cache/evaluation ports, budgets, and bounded batch concurrency. Registered tooling modules add validation, approval, deadlines/cancellation, redacted events, and exception/panic containment. Registered evaluation modules add versioned offline/sampled suites, bounded concurrency, reproducibility metadata, report/feedback ports, and regression decisions. Generated native suites pass Node, TypeScript, Python, Go, and Rust compiler/formatter gates. Framework adapters compile/import against pinned real dependencies. Registered OpenRouter/xAI Responses adapters include native malformed/oversized-response tests in every language; Rust uses the documented typed transport port. An explicit opt-in command exercises a generated adapter against OpenRouter without exposing credentials or outputs. The remaining contract matrix is still open. |
 
 ## 0.2 release gates
 
@@ -60,6 +60,10 @@ proven. Framework adapter dependency compatibility passed in run `29522313151`.
 Registered tool and evaluation modules passed native formatter, compiler/type
 checker, behavior, cancellation, and panic/exception containment gates in run
 `29526999932`.
+Bounded provider-response and malformed-payload tests passed every native and
+framework CI job in run `29527429291`. The opt-in live fixture subsequently
+completed one environment-injected OpenRouter request without logging its secret,
+prompt, or output.
 
 ## 0.3 release gates
 

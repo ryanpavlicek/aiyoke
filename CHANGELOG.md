@@ -36,6 +36,8 @@ All notable changes to this project are documented here. The project follows
   redacted events, versioned offline and sampled-online suites, bounded
   concurrency, reproducibility metadata, baseline regression decisions, report
   sinks, human feedback, and adversarial exception/panic containment tests.
+- Bounded provider-response readers and malformed JSON failures across every
+  Responses adapter, plus a credential-safe opt-in OpenRouter live smoke fixture.
 
 ## 0.1.0 — 2026-07-16
 

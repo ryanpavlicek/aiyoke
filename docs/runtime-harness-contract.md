@@ -129,6 +129,12 @@ executable fake-transport tests, leaving the consuming application free to use
 `reqwest`, `ureq`, or its existing HTTP/TLS stack. Provider conformance tests use
 local fakes or loopback servers and do not make paid external requests.
 
+Provider response bodies are bounded before parsing and malformed JSON fails
+closed with a stable code. Rust communicates the byte limit through its transport
+request and requires the transport to report encoded response size. A separate
+opt-in live smoke command generates and exercises the real JavaScript OpenRouter
+adapter; it is excluded from normal CI and emits only non-secret usage counts.
+
 Claude Code, ChatGPT/Codex, and Grok Build remain developer-plane clients. They
 receive native configuration and workflow artifacts; they are not misrepresented
 as interchangeable production inference endpoints.

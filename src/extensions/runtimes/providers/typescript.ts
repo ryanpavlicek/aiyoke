@@ -248,7 +248,7 @@ export class ResponsesApiAdapter implements ModelAdapter {
       return providerFailure("The provider returned invalid JSON.", false, "invalid_response");
     }
     const record = isRecord(payload) ? payload : {};
-    if (!response.ok || record.error !== undefined || record.status === "failed") {
+    if (!response.ok || record.error != null || record.status === "failed") {
       const error = isRecord(record.error) ? record.error : {};
       const message = typeof error.message === "string" ? error.message : "The provider rejected the request.";
       const code =
@@ -316,6 +316,7 @@ test("maps Responses API output, usage, and registration", async () => {
       JSON.stringify({
         id: "response-1",
         status: "completed",
+        error: null,
         output_text: "world",
         output: [],
         usage: { input_tokens: 2, output_tokens: 3 }

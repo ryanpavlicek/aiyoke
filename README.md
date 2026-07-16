@@ -84,6 +84,20 @@ pnpm check
 pnpm dev --help
 ```
 
+Live provider validation is deliberately separate from `pnpm check`. Copy
+`.env.example` to `.env`, add the local credential, and explicitly opt in:
+
+```powershell
+$env:AIYOKE_LIVE_PROVIDER_TESTS = "1"
+pnpm test:live
+```
+
+The smoke test generates a JavaScript runtime fixture, registers its OpenRouter
+adapter, makes one bounded non-streaming request, validates the typed result, and
+prints only token counts. It defaults to `openrouter/free`; set
+`AIYOKE_LIVE_OPENROUTER_MODEL` to exercise a different route. Normal tests use
+local fakes and never load `.env` or make provider calls.
+
 See `docs/architecture.md`, `docs/extensions.md`, and `docs/compatibility.md` for
 design, extension contracts, and the tested support matrix. Public-release work
 is tracked through evidence-based gates in `docs/release-readiness.md`. The
