@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose a capability, target, or workflow improvement.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the desired behavior and canonical source changes.
+    validations:
+      required: true
+  - type: checkboxes
+    id: architecture
+    attributes:
+      label: Architecture fit
+      options:
+        - label: This can be implemented as a registered extension or a downward-layer change.
+          required: true
+        - label: It does not require storing secrets in generated artifacts.
+          required: true

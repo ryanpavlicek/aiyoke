@@ -1,0 +1,74 @@
+{
+  "name": "aiyoke",
+  "version": "0.1.0",
+  "description": "Deterministic, extensible AI harness compiler for Claude Code, ChatGPT/Codex, Grok/Grok Build, and OpenRouter.",
+  "type": "module",
+  "private": false,
+  "sideEffects": false,
+  "license": "Apache-2.0",
+  "author": "Ryan Pavlicek",
+  "keywords": [
+    "ai",
+    "agents",
+    "claude-code",
+    "codex",
+    "grok",
+    "openrouter",
+    "developer-tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryanpavlicek/aiyoke.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.7.0",
+  "bin": {
+    "aiyoke": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./extension-sdk": {
+      "types": "./dist/extension-sdk/index.d.ts",
+      "import": "./dist/extension-sdk/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "architecture": "node scripts/check-architecture.mjs",
+    "check": "pnpm lint && pnpm typecheck && pnpm architecture && pnpm test:coverage && pnpm build",
+    "dev": "tsx src/cli.ts",
+    "prepack": "pnpm check"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.4",
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^4.0.16",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  }
+}

@@ -1,0 +1,7 @@
+# Default ownership. Add a more specific path below when a subsystem gains a
+# dedicated maintainer.
+* @ryanpavlicek
+
+/docs/ @ryanpavlicek
+/src/core/ @ryanpavlicek
+/src/extension-sdk/ @ryanpavlicek
