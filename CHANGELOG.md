@@ -20,3 +20,5 @@ All notable changes to this project are documented here. The project follows
   path validation.
 - CI for Node.js 22 and 24, governance files, ADRs, extension documentation, and
   the first-release acceptance suite.
+- A five-stack dogfood matrix that exercises all six AI target surfaces for
+  Python/FastAPI, TypeScript/Next.js, JavaScript/Express, Rust/Axum, and Go/Gin.

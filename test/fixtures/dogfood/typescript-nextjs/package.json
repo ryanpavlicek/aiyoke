@@ -1,0 +1,11 @@
+{
+  "name": "dogfood-typescript-nextjs",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "*"
+  },
+  "devDependencies": {
+    "typescript": "*"
+  }
+}

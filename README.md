@@ -46,7 +46,8 @@ pnpm check
 pnpm dev --help
 ```
 
-See `docs/architecture.md` and `docs/extensions.md` for design and extension contracts.
+See `docs/architecture.md`, `docs/extensions.md`, and `docs/compatibility.md` for
+design, extension contracts, and the tested support matrix.
 
 ## License
 

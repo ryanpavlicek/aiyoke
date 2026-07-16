@@ -1,0 +1,8 @@
+{
+  "name": "dogfood-javascript-express",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "express": "*"
+  }
+}
