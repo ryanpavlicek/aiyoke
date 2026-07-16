@@ -5,8 +5,8 @@
 
 ## Context
 
-Repository-root instruction files such as `AGENTS.md`, `CLAUDE.md`, and
-`GROK.md` are shared surfaces. Developers may maintain durable project guidance
+Repository-root instruction files such as `AGENTS.md` and `CLAUDE.md` are
+shared surfaces. Developers may maintain durable project guidance
 in the same files that AI tools consume. Whole-file generation would overwrite
 that guidance, while treating the files as entirely user-owned would prevent
 aiyoke from updating its projection.

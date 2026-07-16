@@ -12,7 +12,7 @@ artifacts, and participate in drift verification.
 | Claude Code | `coding-agent` | `CLAUDE.md`, `.claude/agents`, `.claude/skills`, optional hooks and MCP configuration |
 | Codex | `coding-agent` | `AGENTS.md`, `.agents/skills` |
 | ChatGPT | `chat-plugin` | `.agents/plugins/marketplace.json`, versionable `.codex-plugin` plugin root |
-| Grok Build | `coding-agent` | `GROK.md`, `.grok/config.json`, optional Grok skills |
+| Grok Build | `coding-agent` | `AGENTS.md`, `.grok/skills`, optional `.grok/hooks` and `.grok/config.toml` |
 | xAI/Grok API | `api-provider` | `.xai/provider.json` with an `XAI_API_KEY` environment reference |
 | OpenRouter | `inference-gateway` | `.openrouter/config.json` with routing policy and an `OPENROUTER_API_KEY` environment reference |
 

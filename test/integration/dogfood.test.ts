@@ -92,7 +92,6 @@ describe("dogfood project matrix", () => {
       expect.arrayContaining([
         "CLAUDE.md",
         "AGENTS.md",
-        "GROK.md",
         ".agents/plugins/marketplace.json",
         ".xai/provider.json",
         ".openrouter/config.json",

@@ -24,3 +24,5 @@ All notable changes to this project are documented here. The project follows
   Python/FastAPI, TypeScript/Next.js, JavaScript/Express, Rust/Axum, and Go/Gin.
 - Selective `init --targets` profiles and bounded managed-section merging that
   preserves user-authored content around generated instructions.
+- Grok Build artifacts validated against the official CLI, including native
+  `AGENTS.md`, `.grok/skills`, hook JSON, and project-scoped MCP TOML formats.

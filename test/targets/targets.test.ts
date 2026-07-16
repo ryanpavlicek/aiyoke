@@ -129,6 +129,53 @@ describe("target renderers", () => {
     } as HarnessSpec;
     const artifacts = await grokBuildTarget.render(context(target, spec));
     expect(artifacts.some((artifact) => artifact.path.includes(".grok/skills/"))).toBe(false);
+    expect(artifacts.map((artifact) => artifact.path)).toEqual(["AGENTS.md"]);
+  });
+
+  it("uses Grok Build's current native instructions, skills, hooks, and MCP formats", async () => {
+    const target = {
+      kind: "coding-agent",
+      adapter: extensionId("grok-build"),
+      features: ["instructions", "skills", "hooks", "mcp"],
+      settings: {}
+    } as const;
+    const grokModule: HarnessModule = {
+      ...moduleFixture,
+      hooks: [{ id: "safety", event: "pre-tool", matcher: "Bash", command: "bin/safety-check" }],
+      mcpServers: [
+        {
+          name: "filesystem",
+          transport: { kind: "stdio", command: "npx", args: ["-y", "mcp-filesystem"] }
+        },
+        {
+          name: "remote",
+          transport: {
+            kind: "http",
+            url: "https://mcp.example.com",
+            bearerTokenEnvironmentVariable: "MCP_TOKEN"
+          }
+        }
+      ]
+    };
+    const artifacts = await grokBuildTarget.render({
+      ...context(target),
+      modules: [grokModule]
+    });
+
+    expect(artifacts.map((artifact) => artifact.path)).toEqual([
+      ".grok/config.toml",
+      ".grok/hooks/aiyoke.json",
+      ".grok/skills/review/SKILL.md",
+      "AGENTS.md"
+    ]);
+    expect(artifacts.some((artifact) => artifact.path === "GROK.md")).toBe(false);
+    expect(artifacts.some((artifact) => artifact.path === ".grok/config.json")).toBe(false);
+    expect(
+      artifacts.find((artifact) => artifact.path === ".grok/hooks/aiyoke.json")?.content
+    ).toContain('"PreToolUse"');
+    const config = artifacts.find((artifact) => artifact.path === ".grok/config.toml")?.content;
+    expect(config).toContain('[mcp_servers."filesystem"]');
+    expect(config).toContain('headers = { "Authorization" = "Bearer $' + '{MCP_TOKEN}" }');
   });
 
   it("defaults OpenRouter to chat completions and supports Responses opt-in", async () => {
