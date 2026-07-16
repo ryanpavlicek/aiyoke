@@ -105,6 +105,10 @@ generated production capabilities and their product boundary are specified in
 `docs/runtime-harness-contract.md`. Configuration schema, editing, migration,
 and recovery are documented in `docs/configuration.md`.
 
+Extension authors can run the published `runExtensionCompatibility()` API from
+`aiyoke/extension-sdk`; it uses an in-memory fixture and stable public contracts,
+so compatibility tests do not depend on private compiler or filesystem code.
+
 ## License
 
 Apache-2.0.

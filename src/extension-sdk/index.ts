@@ -1,4 +1,13 @@
 export {
+  type CompatibilityCheck,
+  type CompatibilityCheckId,
+  type CompatibilityFinding,
+  type CompatibilityFixture,
+  type CompatibilityReport,
+  type CompatibilityRunOptions,
+  runExtensionCompatibility
+} from "./compatibility.js";
+export {
   type AiyokeExtension,
   type CapabilityPackExtension,
   type ContributionContext,

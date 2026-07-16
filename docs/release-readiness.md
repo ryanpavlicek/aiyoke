@@ -21,10 +21,10 @@ that does not cover the stated scope are not completion evidence.
 | Registry-based built-ins and lazy facade | Proven | Registry and lazy-facade unit/integration tests cover built-ins and injected loaders. |
 | Deterministic planning and atomic application | Proven | Compiler, filesystem, integration, and five-stack dogfood tests cover the 0.1 contract. |
 | Supported target rendering | Partial | Renderer tests and manual Claude/Grok/OpenRouter checks exist; reproducible client-version fixtures are still missing. |
-| Supported language/framework rendering | Partial | Representative single-stack fixtures exist; polyglot and monorepo composition are missing. |
+| Supported language/framework rendering | Proven | The representative single-stack matrix plus the 12-workspace polyglot monorepo suite cover all five languages, every framework family, nested/conflicting evidence, deterministic operation order, drift verification, and idempotence. |
 | Schema lifecycle | Proven | Schemas v1 through v3, adjacent reversible registry steps, dry-run, explicit downgrade consent, content-addressed backups, rollback, corruption tests, and lossy-downgrade refusal are covered in unit and integration suites. |
 | Configuration editing | Proven | `aiyoke config` supports deterministic flags, dry-run, and explicit TTY-only interaction; confirmation, cancellation, invalid input, validation, backup, and no-write behavior are tested. |
-| Extension compatibility | Partial | In-process registration is tested; no distributable fixture suite or compatibility command exists. |
+| Extension compatibility | Proven | The public `runExtensionCompatibility()` kit validates descriptors/API versions, dependency graphs, loader identity, typed execution, deterministic repeatability, normalized safe artifacts, output bounds, LF content, and secret canaries without importing engine internals. Adversarial fixtures cover hostile loaders and renderers. |
 | Signed extension discovery | Missing | External loaders must be supplied programmatically and have no signed manifest or trust policy. |
 | Renderer isolation | Missing | Third-party renderers execute in-process with the host's authority. |
 | Adversarial and property testing | Partial | Seeded fast-check suites cover configuration round trips, paths, parser limits, aliases, duplicates, and hostile shapes; malicious extension, filesystem-race, and generated-runtime adversarial matrices remain open. |
@@ -64,6 +64,10 @@ Bounded provider-response and malformed-payload tests passed every native and
 framework CI job in run `29527429291`. The opt-in live fixture subsequently
 completed one environment-injected OpenRouter request without logging its secret,
 prompt, or output.
+The public compatibility-kit suite and the full polyglot monorepo framework
+matrix are part of `pnpm check`; the focused six-test gate also proves hostile
+loader containment, deterministic planning, nested conflicting detection
+evidence, complete framework integration rendering, and second-apply idempotence.
 
 ## 0.3 release gates
 

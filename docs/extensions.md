@@ -90,6 +90,40 @@ const engine = await createAiyoke({
 });
 ```
 
+## Run the compatibility kit
+
+Before publishing a loader, execute the public kit with a representative typed
+fixture. It is exported from `aiyoke/extension-sdk` and does not import the
+engine, filesystem adapters, built-in extensions, or private internals:
+
+```ts
+import { runExtensionCompatibility } from "aiyoke/extension-sdk";
+
+const report = await runExtensionCompatibility({
+  loader,
+  dependencies: [],
+  fixture: {
+    spec,
+    target,
+    modules: [],
+    files: { "package.json": "{}" },
+    secretCanaries: ["value-that-must-never-appear"]
+  }
+});
+
+if (report.kind === "failed") {
+  throw new Error(JSON.stringify(report.findings));
+}
+```
+
+The kit loads through a fresh registry, freezes and resolves the dependency
+graph, checks complete descriptor identity, executes the extension twice against
+the same immutable snapshot, and rejects nondeterministic, oversized,
+path-unsafe, CRLF, duplicate-path, or secret-bearing output. Language/framework
+fixtures validate detection confidence; target and runtime fixtures validate
+their render contracts. Findings redact configured canaries even when a hostile
+loader includes one in an exception.
+
 Declare required extensions in `descriptor.requires`, and mutually exclusive
 extensions in `descriptor.conflicts`. Do not reach into another extension's
 private files to call it. The registry resolves requirements in deterministic

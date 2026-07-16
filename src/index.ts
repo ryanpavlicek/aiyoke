@@ -15,6 +15,9 @@ export { AiyokeError, aggregateHarnessStack, extensionId, safeRelativePath } fro
 export type {
   AiyokeExtension,
   CapabilityPackExtension,
+  CompatibilityFixture,
+  CompatibilityReport,
+  CompatibilityRunOptions,
   ExtensionDescriptor,
   ExtensionLoader,
   FrameworkExtension,
@@ -29,7 +32,8 @@ export {
   defineRuntime,
   defineTarget,
   EXTENSION_API_VERSION,
-  ExtensionRegistry
+  ExtensionRegistry,
+  runExtensionCompatibility
 } from "./extension-sdk/index.js";
 
 export interface CreateAiyokeOptions {

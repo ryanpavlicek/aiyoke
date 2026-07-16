@@ -38,6 +38,11 @@ All notable changes to this project are documented here. The project follows
   sinks, human feedback, and adversarial exception/panic containment tests.
 - Bounded provider-response readers and malformed JSON failures across every
   Responses adapter, plus a credential-safe opt-in OpenRouter live smoke fixture.
+- A public extension compatibility kit with deterministic double execution,
+  dependency/identity validation, output/path limits, and secret-canary checks.
+- A 12-workspace polyglot monorepo acceptance suite covering every supported
+  language and framework integration, nested conflicting evidence, deterministic
+  plans, drift checks, and idempotent apply behavior.
 
 ## 0.1.0 — 2026-07-16
 
