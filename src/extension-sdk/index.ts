@@ -33,6 +33,14 @@ export {
   type TargetVerificationContext,
   type WorkspaceSnapshot
 } from "./contracts.js";
+export {
+  type IsolatedRendererResult,
+  type IsolatedRenderInvocation,
+  type IsolatedSignedExtensionOptions,
+  RENDERER_ISOLATION_PROTOCOL_VERSION,
+  type RendererIsolationLimits,
+  type RendererIsolationRejectionReason
+} from "./isolation.js";
 export { ExtensionRegistry } from "./registry.js";
 export {
   type ExtensionConsent,
@@ -46,5 +54,7 @@ export {
   type SignedExtensionDiscoveryOptions,
   type SignedExtensionDiscoveryResult,
   type SignedExtensionManifest,
+  type SignedExtensionPackageVerificationResult,
+  type VerifiedSignedExtensionPackage,
   verifySignedExtensionManifest
 } from "./signed-manifest.js";

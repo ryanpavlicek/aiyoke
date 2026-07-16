@@ -49,6 +49,11 @@ All notable changes to this project are documented here. The project follows
   strict versioned manifest, deterministic content-tree digests, Ed25519 trust
   roots, key/content/manifest revocation, exact-digest consent, resource limits,
   symlink rejection, revalidation before import, and adversarial tests.
+- Optional target/runtime renderer isolation using a versioned child-process
+  protocol, bounded snapshots and outputs, heap/deadline/cancellation controls,
+  a minimal environment, package re-hashing, and fail-closed artifact validation.
+- A complete external hello-target template that passes the public compatibility
+  kit and signed isolated-rendering flow with ephemeral CI trust material.
 
 ## 0.1.0 — 2026-07-16
 

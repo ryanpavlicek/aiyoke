@@ -57,9 +57,10 @@
     "test:coverage": "vitest run --coverage",
     "test:runtimes": "pnpm build && node scripts/validate-runtime-fixtures.mjs",
     "test:frameworks": "pnpm build && node scripts/validate-framework-runtime-fixtures.mjs",
+    "test:isolation-dist": "node scripts/validate-built-extension-isolation.mjs",
     "test:live": "pnpm build && node --use-system-ca --env-file-if-exists=.env scripts/live-provider-smoke.mjs",
     "architecture": "node scripts/check-architecture.mjs",
-    "check": "pnpm lint && pnpm typecheck && pnpm architecture && pnpm test:coverage && pnpm build",
+    "check": "pnpm lint && pnpm typecheck && pnpm architecture && pnpm test:coverage && pnpm build && pnpm test:isolation-dist",
     "dev": "tsx src/cli.ts",
     "prepack": "pnpm check"
   },

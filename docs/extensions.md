@@ -172,9 +172,49 @@ The manifest format is versioned and deliberately narrow:
 The trust store and consent decision are integration ports: Aiyoke does not
 silently download trust roots, choose publishers, or grant execution. Hosts can
 back those ports with a checked-in enterprise policy, an offline bundle, or an
-audited service. Renderer process isolation is a separate defense and remains a
-0.3 release gate; a valid signature establishes identity and integrity, not that
-the code is harmless.
+audited service. Renderer process isolation is a separate defense; a valid
+signature establishes identity and integrity, not that the code is harmless.
+
+For target and runtime renderers, the optional isolation facade verifies the
+same signed package without importing it into the host and executes `render()`
+through a versioned child-process protocol:
+
+```ts
+import { renderSignedExtensionIsolated } from "aiyoke";
+
+const result = await renderSignedExtensionIsolated({
+  manifestPath,
+  packageRoot,
+  trust,
+  consent: { kind: "granted", manifestDigest },
+  invocation: {
+    kind: "target-render",
+    context: { spec, target, modules, workspace }
+  },
+  limits: {
+    timeoutMs: 5_000,
+    maxInputBytes: 16 * 1024 * 1024,
+    maxOutputBytes: 2 * 1024 * 1024,
+    maxWorkspaceFiles: 2_000,
+    maxArtifacts: 512,
+    memoryMb: 128
+  },
+  signal
+});
+```
+
+The adapter sends a bounded immutable workspace snapshot, exposes only a small
+non-secret environment, applies a V8 heap limit, honors deadlines and
+`AbortSignal` cancellation, ignores renderer stdout as a protocol channel, and
+validates artifact paths and structure in both processes. The child re-hashes
+the package immediately before import. Failures return a discriminated rejection
+instead of renderer-controlled error text.
+
+Process isolation limits accidental authority and contains crashes; it is not an
+operating-system sandbox. A renderer may still access resources available to its
+OS user, including absolute filesystem paths and network sockets. Run genuinely
+untrusted code inside an additional container, VM, or platform sandbox with an
+appropriate filesystem and network policy.
 
 ## Run the compatibility kit
 

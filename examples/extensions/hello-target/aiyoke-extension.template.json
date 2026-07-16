@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "extension": {
+    "kind": "target",
+    "id": "hello-target",
+    "version": "1.0.0",
+    "apiVersion": "1.0.0",
+    "displayName": "Hello target",
+    "description": "A complete external Aiyoke target example.",
+    "capabilities": ["instructions"],
+    "requires": [],
+    "conflicts": []
+  },
+  "package": {
+    "name": "@aiyoke-example/hello-target",
+    "version": "1.0.0",
+    "entrypoint": "index.mjs",
+    "exportName": "loader"
+  },
+  "content": {
+    "algorithm": "sha256",
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "replace-with-publisher-key-id",
+    "value": "AA=="
+  }
+}

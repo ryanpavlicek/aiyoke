@@ -21,6 +21,8 @@ export type {
   ExtensionDescriptor,
   ExtensionLoader,
   FrameworkExtension,
+  IsolatedRendererResult,
+  IsolatedSignedExtensionOptions,
   LanguageExtension,
   RuntimeTemplateExtension,
   SignedExtensionDiscoveryOptions,
@@ -61,8 +63,17 @@ export async function discoverSignedExtension(
   return discovery.discoverSignedExtension(options);
 }
 
+export async function renderSignedExtensionIsolated(
+  options: SignedIsolationOptions
+): Promise<SignedIsolationResult> {
+  const isolation = await import("./infrastructure/isolation/index.js");
+  return isolation.renderSignedExtensionIsolated(options);
+}
+
 import type {
   ExtensionLoader as RegisteredExtensionLoader,
   SignedExtensionDiscoveryOptions as SignedDiscoveryOptions,
-  SignedExtensionDiscoveryResult as SignedDiscoveryResult
+  SignedExtensionDiscoveryResult as SignedDiscoveryResult,
+  IsolatedSignedExtensionOptions as SignedIsolationOptions,
+  IsolatedRendererResult as SignedIsolationResult
 } from "./extension-sdk/index.js";

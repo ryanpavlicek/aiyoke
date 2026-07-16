@@ -10,6 +10,7 @@ import {
   type SignedExtensionDiscoveryOptions,
   type SignedExtensionDiscoveryResult,
   type SignedExtensionManifest,
+  type SignedExtensionPackageVerificationResult,
   verifySignedExtensionManifest
 } from "../../extension-sdk/index.js";
 
@@ -126,9 +127,9 @@ function isLoader(value: unknown): value is ExtensionLoader {
   return loader.descriptor !== undefined && typeof loader.load === "function";
 }
 
-export async function discoverSignedExtension(
+export async function verifySignedExtensionPackage(
   options: SignedExtensionDiscoveryOptions
-): Promise<SignedExtensionDiscoveryResult> {
+): Promise<SignedExtensionPackageVerificationResult> {
   let manifest: SignedExtensionManifest;
   try {
     manifest = parseSignedExtensionManifest(await readFile(resolve(options.manifestPath), "utf8"));
@@ -191,19 +192,46 @@ export async function discoverSignedExtension(
     const entrypointRealPath = await realpath(entrypoint);
     if (!inside(secondPackage.root, entrypointRealPath))
       throw new TypeError("Entrypoint escaped package root.");
-    const url = pathToFileURL(entrypointRealPath);
-    url.searchParams.set("aiyoke-content", actualDigest);
+    return {
+      kind: "verified",
+      manifest,
+      manifestDigest: verification.manifestDigest,
+      contentDigest: actualDigest,
+      packageRoot: secondPackage.root,
+      entrypointPath: entrypointRealPath
+    };
+  } catch {
+    return {
+      kind: "rejected",
+      reason: "package-invalid",
+      message: "Verified extension package is invalid.",
+      manifestDigest: verification.manifestDigest
+    };
+  }
+}
+
+export async function discoverSignedExtension(
+  options: SignedExtensionDiscoveryOptions
+): Promise<SignedExtensionDiscoveryResult> {
+  const verification = await verifySignedExtensionPackage(options);
+  if (verification.kind !== "verified") return verification;
+  try {
+    const url = pathToFileURL(verification.entrypointPath);
+    url.searchParams.set("aiyoke-content", verification.contentDigest);
     const loaded = (await import(url.href)) as Readonly<Record<string, unknown>>;
-    const loader = loaded[manifest.package.exportName];
-    if (!isLoader(loader) || canonical(loader.descriptor) !== canonical(manifest.extension)) {
+    const loader = loaded[verification.manifest.package.exportName];
+    if (
+      !isLoader(loader) ||
+      canonical(loader.descriptor) !== canonical(verification.manifest.extension)
+    ) {
       throw new TypeError("Module export does not match the signed extension descriptor.");
     }
     return {
       kind: "loaded",
       loader,
-      manifest,
+      manifest: verification.manifest,
       manifestDigest: verification.manifestDigest,
-      contentDigest: actualDigest
+      contentDigest: verification.contentDigest
     };
   } catch {
     return {

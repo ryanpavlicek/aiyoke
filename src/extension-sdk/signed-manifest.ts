@@ -92,6 +92,25 @@ export interface SignedExtensionDiscoveryOptions {
   readonly maxPackageFiles?: number;
 }
 
+export interface VerifiedSignedExtensionPackage {
+  readonly kind: "verified";
+  readonly manifest: SignedExtensionManifest;
+  readonly manifestDigest: string;
+  readonly contentDigest: string;
+  readonly packageRoot: string;
+  readonly entrypointPath: string;
+}
+
+export type SignedExtensionPackageVerificationResult =
+  | VerifiedSignedExtensionPackage
+  | Extract<ManifestVerificationResult, { readonly kind: "consent-required" }>
+  | {
+      readonly kind: "rejected";
+      readonly reason: ManifestRejectionReason | "manifest-invalid" | "package-invalid";
+      readonly message: string;
+      readonly manifestDigest?: string;
+    };
+
 export type SignedExtensionDiscoveryResult =
   | {
       readonly kind: "loaded";
