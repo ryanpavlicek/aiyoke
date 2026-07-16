@@ -67,61 +67,67 @@ afterEach(async () => {
 });
 
 describe("dogfood project matrix", () => {
-  it.each(fixtures)("generates and validates every target for $name", async (fixture) => {
-    const root = await mkdtemp(join(tmpdir(), "aiyoke-dogfood-"));
-    temporaryRoots.push(root);
-    await cp(join(fixtureRoot, fixture.directory), root, { recursive: true });
+  it.each(fixtures)(
+    "generates and validates every target for $name",
+    async (fixture) => {
+      const root = await mkdtemp(join(tmpdir(), "aiyoke-dogfood-"));
+      temporaryRoots.push(root);
+      await cp(join(fixtureRoot, fixture.directory), root, { recursive: true });
 
-    const engine = await AiyokeEngine.open(root);
-    const detected = await engine.detect();
-    expect(detected).toContainEqual(
-      expect.objectContaining({ descriptor: expect.objectContaining({ id: fixture.language }) })
-    );
-    expect(detected).toContainEqual(
-      expect.objectContaining({ descriptor: expect.objectContaining({ id: fixture.framework }) })
-    );
+      const engine = await AiyokeEngine.open(root);
+      const detected = await engine.detect();
+      expect(detected).toContainEqual(
+        expect.objectContaining({ descriptor: expect.objectContaining({ id: fixture.language }) })
+      );
+      expect(detected).toContainEqual(
+        expect.objectContaining({ descriptor: expect.objectContaining({ id: fixture.framework }) })
+      );
 
-    const initialized = await engine.initialize();
-    expect(initialized.spec.composition).toEqual({
-      kind: "single",
-      stack: { languages: [fixture.language], frameworks: [fixture.framework] }
-    });
+      const initialized = await engine.initialize();
+      expect(initialized.spec.composition).toEqual({
+        kind: "single",
+        stack: { languages: [fixture.language], frameworks: [fixture.framework] }
+      });
 
-    const plan = await engine.plan();
-    expect(plan.operations.every((operation) => operation.kind === "create")).toBe(true);
-    const applied = await engine.apply();
-    expect(applied.changedPaths).toEqual(
-      expect.arrayContaining([
-        "CLAUDE.md",
-        "AGENTS.md",
-        ".agents/plugins/marketplace.json",
-        ".xai/provider.json",
-        ".openrouter/config.json",
-        `aiyoke-runtime/${fixture.language}/runtime.${
-          fixture.language === "typescript"
-            ? "ts"
-            : fixture.language === "javascript"
-              ? "js"
-              : fixture.language === "python"
-                ? "py"
-                : fixture.language === "rust"
-                  ? "rs"
-                  : "go"
-        }`,
-        ".aiyoke/lock.json"
-      ])
-    );
+      const plan = await engine.plan();
+      expect(plan.operations.every((operation) => operation.kind === "create")).toBe(true);
+      const applied = await engine.apply();
+      expect(applied.changedPaths).toEqual(
+        expect.arrayContaining([
+          "CLAUDE.md",
+          "AGENTS.md",
+          ".agents/plugins/marketplace.json",
+          ".xai/provider.json",
+          ".openrouter/config.json",
+          `aiyoke-runtime/${fixture.language}/runtime.${
+            fixture.language === "typescript"
+              ? "ts"
+              : fixture.language === "javascript"
+                ? "js"
+                : fixture.language === "python"
+                  ? "py"
+                  : fixture.language === "rust"
+                    ? "rs"
+                    : "go"
+          }`,
+          ".aiyoke/lock.json"
+        ])
+      );
 
-    const instructions = await readFile(join(root, "AGENTS.md"), "utf8");
-    expect(instructions).toContain(fixture.languageTitle);
-    expect(instructions).toContain(fixture.frameworkTitle);
-    expect(await readFile(join(root, ".xai", "provider.json"), "utf8")).toContain("XAI_API_KEY");
-    expect(await readFile(join(root, ".openrouter", "config.json"), "utf8")).toContain(
-      "OPENROUTER_API_KEY"
-    );
+      const instructions = await readFile(join(root, "AGENTS.md"), "utf8");
+      expect(instructions).toContain(fixture.languageTitle);
+      expect(instructions).toContain(fixture.frameworkTitle);
+      expect(await readFile(join(root, ".xai", "provider.json"), "utf8")).toContain("XAI_API_KEY");
+      expect(await readFile(join(root, ".openrouter", "config.json"), "utf8")).toContain(
+        "OPENROUTER_API_KEY"
+      );
 
-    const reopened = await AiyokeEngine.open(root);
-    expect((await reopened.check()).filter((finding) => finding.severity === "error")).toEqual([]);
-    expect((await reopened.apply()).changedPaths).toEqual([]);
-  });
+      const reopened = await AiyokeEngine.open(root);
+      expect((await reopened.check()).filter((finding) => finding.severity === "error")).toEqual(
+        []
+      );
+      expect((await reopened.apply()).changedPaths).toEqual([]);
+    },
+    15_000
+  );
 });

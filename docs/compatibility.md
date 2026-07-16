@@ -36,9 +36,17 @@ provider ports, typed results and failures, deadlines and cancellation, bounded
 retry/fallback and circuit breaking, validation and repair, redacted lifecycle
 events, guards and approvals, cache/evaluation ports, token and cost budgets, and
 bounded batch concurrency. CI executes the generated native test suites and runs
-the applicable compilers, type checkers, and formatters. Framework request-lifecycle
-adapters and broader adversarial fixtures are still required before 0.3 support is
-considered final.
+the applicable compilers, type checkers, and formatters. Selected frameworks also
+receive registered thin request-lifecycle adapters; a clean CI fixture checks them
+against pinned real releases of every framework in this matrix. Request-level
+behavioral/adversarial fixtures are still required before 0.3 support is final.
+
+Selecting OpenRouter or the xAI API emits registered Responses API adapters and
+native mock tests in all five languages. TypeScript, JavaScript, Python, and Go
+ship an HTTP implementation; Rust ships the stable transport port and adapter
+template because its standard library has no HTTPS client. Live paid-provider
+smoke tests and the broader malformed-response/size-limit matrix remain release
+gates rather than default CI behavior.
 
 ## Dogfood acceptance matrix
 

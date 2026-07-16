@@ -88,3 +88,23 @@ Framework support means a thin integration example and verified request lifecycl
 not a copy of the runtime for every framework. Target support means native
 developer-plane artifacts and provider configuration appropriate to that target;
 it does not imply that desktop coding clients become production inference APIs.
+
+## Provider integration boundary
+
+Selecting `openrouter` or `xai-api` generates a registered Responses API adapter
+for every selected runtime language. The adapter owns request/response mapping,
+typed failures, retry classification, usage and estimated-cost extraction,
+endpoint validation, and credential redaction. It receives credentials through
+an injected secret resolver; generated code never loads `.env` or serializes a
+secret into configuration.
+
+TypeScript and JavaScript use the platform Fetch API, Python supplies a standard
+library `urllib` transport, and Go supplies a standard `net/http` transport. Rust
+defines a typed `ResponsesTransport` port and a complete registered adapter plus
+executable fake-transport tests, leaving the consuming application free to use
+`reqwest`, `ureq`, or its existing HTTP/TLS stack. Provider conformance tests use
+local fakes or loopback servers and do not make paid external requests.
+
+Claude Code, ChatGPT/Codex, and Grok Build remain developer-plane clients. They
+receive native configuration and workflow artifacts; they are not misrepresented
+as interchangeable production inference endpoints.

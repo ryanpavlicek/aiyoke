@@ -30,7 +30,7 @@ try {
   await engine.initialize({
     languages: ["python", "typescript", "javascript", "rust", "go"].map(extensionId),
     frameworks: [],
-    targetAdapters: [extensionId("codex")]
+    targetAdapters: [extensionId("codex"), extensionId("openrouter")]
   });
   await engine.apply();
 
@@ -41,7 +41,9 @@ try {
   const rustDirectory = join(root, "aiyoke-runtime", "rust");
 
   run(process.execPath, ["--check", join(javaScriptDirectory, "runtime.js")]);
+  run(process.execPath, ["--check", join(javaScriptDirectory, "providers", "responses.js")]);
   run(process.execPath, ["--test", join(javaScriptDirectory, "runtime.test.js")]);
+  run(process.execPath, ["--test", join(javaScriptDirectory, "providers", "responses.test.js")]);
   run(process.execPath, [
     resolve("node_modules", "typescript", "bin", "tsc"),
     "--ignoreConfig",
@@ -58,31 +60,54 @@ try {
     resolve("node_modules", "@types"),
     "--skipLibCheck",
     join(typeScriptDirectory, "runtime.ts"),
-    join(typeScriptDirectory, "runtime.test.ts")
+    join(typeScriptDirectory, "runtime.test.ts"),
+    join(typeScriptDirectory, "providers", "responses.ts"),
+    join(typeScriptDirectory, "providers", "responses.test.ts")
   ]);
   run(process.execPath, [
     resolve("node_modules", "tsx", "dist", "cli.mjs"),
     "--test",
-    join(typeScriptDirectory, "runtime.test.ts")
+    join(typeScriptDirectory, "runtime.test.ts"),
+    join(typeScriptDirectory, "providers", "responses.test.ts")
   ]);
   const python = process.platform === "win32" ? "python" : "python3";
   run(python, [
     "-m",
     "py_compile",
     join(pythonDirectory, "runtime.py"),
-    join(pythonDirectory, "test_runtime.py")
+    join(pythonDirectory, "test_runtime.py"),
+    join(pythonDirectory, "providers", "responses.py"),
+    join(pythonDirectory, "providers", "test_responses.py")
   ]);
   run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_runtime.py"]);
-  run("go", ["test", join(goDirectory, "runtime.go"), join(goDirectory, "runtime_test.go")]);
+  run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_responses.py"]);
+  run("go", [
+    "test",
+    join(goDirectory, "runtime.go"),
+    join(goDirectory, "runtime_test.go"),
+    join(goDirectory, "responses_provider.go"),
+    join(goDirectory, "responses_provider_test.go")
+  ]);
   run("gofmt", ["-d", join(goDirectory, "runtime.go"), join(goDirectory, "runtime_test.go")], {
     requireEmptyStdout: true
   });
+  run(
+    "gofmt",
+    [
+      "-d",
+      join(goDirectory, "responses_provider.go"),
+      join(goDirectory, "responses_provider_test.go")
+    ],
+    { requireEmptyStdout: true }
+  );
   run("rustfmt", [
     "--edition",
     "2021",
     "--check",
     join(rustDirectory, "runtime.rs"),
-    join(rustDirectory, "runtime_test.rs")
+    join(rustDirectory, "runtime_test.rs"),
+    join(rustDirectory, "responses_provider.rs"),
+    join(rustDirectory, "responses_provider_test.rs")
   ]);
   run("rustc", [
     "--edition",
@@ -93,6 +118,21 @@ try {
     join(rustDirectory, "runtime_test.rs")
   ]);
   run(join(rustDirectory, process.platform === "win32" ? "runtime_test.exe" : "runtime_test"), []);
+  run("rustc", [
+    "--edition",
+    "2021",
+    "--test",
+    "--out-dir",
+    rustDirectory,
+    join(rustDirectory, "responses_provider_test.rs")
+  ]);
+  run(
+    join(
+      rustDirectory,
+      process.platform === "win32" ? "responses_provider_test.exe" : "responses_provider_test"
+    ),
+    []
+  );
 
   process.stdout.write("All generated runtime templates passed their native conformance suites.\n");
 } catch (error) {

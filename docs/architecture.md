@@ -99,9 +99,10 @@ review their source, pin versions, and run them only in trusted workspaces.
 The registry validates metadata and dependencies, but it is not a sandbox.
 
 Secrets are never copied into generated artifacts. Providers refer to
-environment-variable names (for example, `OPENROUTER_API_KEY`), and adapters
-read those variables only at execution time. Plans and logs must redact token
-values and should record the variable name or provider identifier instead.
+environment-variable names (for example, `OPENROUTER_API_KEY`), and generated
+adapters receive values only from a secret resolver injected by the consuming
+application at execution time. Plans and logs must redact token values and
+should record the variable name or provider identifier instead.
 
 OpenRouter is supported behind an explicit inference-gateway domain boundary.
 Its generated configuration contract is versioned, while external routing,

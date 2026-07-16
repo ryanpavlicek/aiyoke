@@ -1,4 +1,5 @@
 import { javaScriptIntegrations } from "./integrations/javascript.js";
+import { javaScriptProviders } from "./providers/javascript.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
 const SOURCE = `export class AdapterRegistry {
@@ -579,7 +580,8 @@ export const javascriptRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "runtime.test.js",
   testSource: TEST_SOURCE,
-  integrations: javaScriptIntegrations
+  integrations: javaScriptIntegrations,
+  providers: javaScriptProviders
 });
 
 export function createJavaScriptRuntimeLoader() {

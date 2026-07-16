@@ -23,6 +23,14 @@ tests under `aiyoke-runtime/`. The generated runtime handles deadlines,
 cancellation, retries, fallbacks, circuit breaking, output validation and repair,
 redacted events, guards and approval, cache/evaluation ports, token and cost
 budgets, and bounded batch concurrency without adding a provider SDK dependency.
+Selected frameworks also receive registered thin request adapters that translate
+framework request context, authorization inputs, cancellation where available,
+and typed harness results without duplicating the runtime core.
+Selecting OpenRouter or the xAI API also generates a registered Responses API
+adapter and native contract tests. TypeScript, JavaScript, Python, and Go include
+standard HTTP implementations; Rust exposes the same adapter over a typed
+transport port so consumers can plug in their chosen TLS/HTTP crate. Secret
+values enter only through an injected resolver and are redacted from failures.
 
 First-party targets are Claude Code, Codex, ChatGPT plugins, Grok Build, the xAI/Grok API,
 and OpenRouter. Provider credentials are referenced by environment-variable name and are never

@@ -1,4 +1,5 @@
 import { pythonIntegrations } from "./integrations/python.js";
+import { pythonProviders } from "./providers/python.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
 const SOURCE = `from __future__ import annotations
@@ -744,7 +745,8 @@ export const pythonRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "test_runtime.py",
   testSource: TEST_SOURCE,
-  integrations: pythonIntegrations
+  integrations: pythonIntegrations,
+  providers: pythonProviders
 });
 
 export function createPythonRuntimeLoader() {

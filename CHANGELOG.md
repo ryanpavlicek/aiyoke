@@ -23,6 +23,14 @@ All notable changes to this project are documented here. The project follows
   breaking, structured-output validation and repair, redacted events, approval,
   cache and evaluation ports, budgets, bounded concurrency, resolved policy
   files, and native conformance tests.
+- Registered thin runtime request adapters for every supported framework, with a
+  clean CI fixture that compiles or imports them against pinned real framework
+  releases.
+- Added registered OpenRouter and xAI Responses API runtime adapters for all five
+  languages, injected secret and HTTP boundaries, native mock conformance tests,
+  cost/usage mapping, retry classification, endpoint validation, and credential
+  redaction. Rust deliberately uses a typed transport port rather than choosing
+  an application TLS crate.
 
 ## 0.1.0 — 2026-07-16
 

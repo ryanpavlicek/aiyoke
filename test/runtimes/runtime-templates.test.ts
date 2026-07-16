@@ -67,6 +67,14 @@ const frameworkIntegrations: ReadonlyMap<
   ]
 ]);
 
+const providerArtifacts = new Map([
+  ["go", ["responses_provider.go", "responses_provider_test.go"]],
+  ["javascript", ["providers/responses.js", "providers/responses.test.js"]],
+  ["python", ["providers/__init__.py", "providers/responses.py", "providers/test_responses.py"]],
+  ["rust", ["responses_provider.rs", "responses_provider_test.rs"]],
+  ["typescript", ["providers/responses.ts", "providers/responses.test.ts"]]
+]);
+
 const workspace = {
   root: "/workspace",
   files: [] as readonly string[],
@@ -110,6 +118,7 @@ describe("runtime template extensions", () => {
       const language = runtime.descriptor.language;
       const spec = {
         ...defaultHarnessSpec("runtime"),
+        targets: [],
         composition: {
           kind: "single" as const,
           stack: { languages: [language], frameworks: [] }
@@ -167,6 +176,7 @@ describe("runtime template extensions", () => {
       if (integrations === undefined) throw new Error(`${language} integrations missing`);
       const spec = {
         ...defaultHarnessSpec("framework-runtime"),
+        targets: [],
         composition: {
           kind: "single" as const,
           stack: {
@@ -272,6 +282,51 @@ describe("runtime template extensions", () => {
         compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext }
       }).outputText;
       expect(javaScript[artifactIndex]?.content).toBe(transpiled);
+    }
+  });
+
+  it("renders only provider artifacts registered for selected targets", async () => {
+    for (const runtime of await loadedRuntimes()) {
+      const language = runtime.descriptor.language;
+      const spec = {
+        ...defaultHarnessSpec("provider-runtime"),
+        composition: {
+          kind: "single" as const,
+          stack: { languages: [language], frameworks: [] }
+        },
+        targets: [
+          {
+            kind: "inference-gateway" as const,
+            adapter: extensionId("openrouter"),
+            routing: {
+              kind: "fixed" as const,
+              model: "test/model"
+            },
+            settings: {}
+          }
+        ]
+      };
+      if (spec.runtime.kind !== "enabled") throw new Error("runtime must be enabled");
+      const artifacts = await runtime.render({
+        spec,
+        workspace,
+        runtime: spec.runtime,
+        scope: { kind: "project", stack: spec.composition.stack }
+      });
+      expect(artifacts.slice(4).map((artifact) => artifact.path)).toEqual(
+        (providerArtifacts.get(language) ?? []).map((path) => `aiyoke-runtime/${language}/${path}`)
+      );
+      for (const artifact of artifacts.slice(4)) {
+        expect(artifact.content).not.toMatch(/process\.env|Deno\.env|\.env\b/);
+      }
+      if (artifacts.length > 4) {
+        expect(
+          artifacts
+            .slice(4)
+            .map((artifact) => artifact.content)
+            .join("\n")
+        ).toMatch(/SecretResolver|resolveSecret/);
+      }
     }
   });
 });

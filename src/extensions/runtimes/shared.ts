@@ -21,6 +21,7 @@ export interface RuntimeTemplateDefinition {
   readonly testFileName: string;
   readonly testSource: string;
   readonly integrations?: readonly FrameworkIntegrationDefinition[];
+  readonly providers?: readonly ProviderIntegrationDefinition[];
 }
 
 export interface FrameworkIntegrationDefinition {
@@ -29,9 +30,21 @@ export interface FrameworkIntegrationDefinition {
   readonly source: string;
 }
 
+export interface ProviderIntegrationDefinition {
+  readonly targets: readonly string[];
+  readonly artifacts: readonly IntegrationArtifactDefinition[];
+}
+
+export interface IntegrationArtifactDefinition {
+  readonly path: string;
+  readonly source: string;
+}
+
 function readme(
   definition: RuntimeTemplateDefinition,
-  integrations: readonly FrameworkIntegrationDefinition[]
+  integrations: readonly FrameworkIntegrationDefinition[],
+  providers: readonly ProviderIntegrationDefinition[],
+  selectedTargets: ReadonlySet<string>
 ): string {
   const integrationGuidance =
     integrations.length === 0
@@ -41,6 +54,18 @@ function readme(
           .join(
             ", "
           )}. Thin adapters are under \`integrations/\` and depend on the stable runtime facade.`;
+  const providerGuidance =
+    providers.length === 0
+      ? "No inference provider adapter was selected for this scope."
+      : `Selected provider integration targets: ${[
+          ...new Set(
+            providers
+              .flatMap((provider) => provider.targets)
+              .filter((target) => selectedTargets.has(extensionId(target)))
+          )
+        ]
+          .map((target) => `\`${target}\``)
+          .join(", ")}. Provider adapters resolve credentials through an injected secret port.`;
   return `# Aiyoke ${definition.displayName} runtime template
 
 This generated directory is owned by Aiyoke. It contains an executable,
@@ -57,8 +82,10 @@ timeout, malformed-output, cancellation, and concurrency cases.
 
 ${integrationGuidance}
 
-Do not place credentials in this directory. Provider adapters must read secrets
-from the environment or the consuming application's secret manager.
+${providerGuidance}
+
+Do not place credentials in this directory. Supply a secret resolver backed by
+the environment or the consuming application's secret manager at runtime.
 `;
 }
 
@@ -92,7 +119,7 @@ export function createRuntimeTemplate(
   };
   return defineRuntime({
     descriptor,
-    async render({ runtime, scope }) {
+    async render({ spec, runtime, scope }) {
       const scopePrefix = scope.kind === "project" ? "" : `${scope.path}/`;
       const directory = safeRelativePath(
         `${scopePrefix}${runtime.outputDirectory}/${definition.language}`
@@ -108,12 +135,21 @@ export function createRuntimeTemplate(
       const integrations = (definition.integrations ?? []).filter((integration) =>
         selectedFrameworks.has(extensionId(integration.framework))
       );
+      const selectedTargets = new Set(spec.targets.map((target) => target.adapter));
+      const providers = (definition.providers ?? []).filter((provider) =>
+        provider.targets.some((target) => selectedTargets.has(extensionId(target)))
+      );
       return [
         artifact(definition.fileName, definition.source),
         artifact(definition.testFileName, definition.testSource),
         artifact("policy.json", policyJson(resolveRuntimePolicy(runtime.profile))),
-        artifact("README.md", readme(definition, integrations)),
-        ...integrations.map((integration) => artifact(integration.path, integration.source))
+        artifact("README.md", readme(definition, integrations, providers, selectedTargets)),
+        ...integrations.map((integration) => artifact(integration.path, integration.source)),
+        ...providers.flatMap((provider) =>
+          provider.artifacts.map((providerArtifact) =>
+            artifact(providerArtifact.path, providerArtifact.source)
+          )
+        )
       ];
     }
   });
