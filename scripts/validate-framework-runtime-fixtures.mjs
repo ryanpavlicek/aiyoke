@@ -139,7 +139,7 @@ require (
 `,
     "utf8"
   );
-  run("go", ["mod", "download"], { cwd: go });
+  run("go", ["mod", "tidy"], { cwd: go });
   run("go", ["test", "./..."], { cwd: go });
 
   await writeFile(
