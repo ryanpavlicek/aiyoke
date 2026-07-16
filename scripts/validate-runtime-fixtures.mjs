@@ -77,6 +77,13 @@ try {
   run("gofmt", ["-d", join(goDirectory, "runtime.go"), join(goDirectory, "runtime_test.go")], {
     requireEmptyStdout: true
   });
+  run("rustfmt", [
+    "--edition",
+    "2021",
+    "--check",
+    join(rustDirectory, "runtime.rs"),
+    join(rustDirectory, "runtime_test.rs")
+  ]);
   run("rustc", [
     "--edition",
     "2021",
