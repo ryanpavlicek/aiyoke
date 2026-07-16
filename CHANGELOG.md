@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The project follows
 
 ## Unreleased
 
+## 0.3.1 — 2026-07-16
+
+### Fixed
+
+- Publish the downloaded release tarball through an explicit local path so npm
+  cannot interpret the artifact path as a GitHub repository shorthand.
+- Add a release-workflow regression test that requires the explicit local
+  tarball path and preserves the protected OIDC publishing boundary.
+
 ## 0.3.0 — 2026-07-16
 
 ### Added

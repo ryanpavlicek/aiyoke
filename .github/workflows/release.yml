@@ -138,7 +138,7 @@ jobs:
       - name: Verify artifact checksum
         run: node scripts/release-checksum.mjs verify "release/aiyoke-${GITHUB_REF_NAME#v}.tgz.sha256"
       - name: Publish exact tarball with npm OIDC provenance
-        run: npm publish "release/aiyoke-${GITHUB_REF_NAME#v}.tgz" --access public
+        run: npm publish "./release/aiyoke-${GITHUB_REF_NAME#v}.tgz" --access public
       - name: Verify registry version
         run: test "$(npm view "aiyoke@${GITHUB_REF_NAME#v}" version)" = "${GITHUB_REF_NAME#v}"
       - name: Create GitHub release with checksums and SBOM

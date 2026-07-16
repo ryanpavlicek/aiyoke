@@ -11,8 +11,8 @@ There is no public bug-bounty promise.
 
 ## Supported versions
 
-Before 0.3.0, only the current `main` release candidate receives security fixes.
-After 0.3.0, the latest minor release receives fixes; older minors may be asked to
+Before 0.3.1, only the current `main` release candidate receives security fixes.
+After 0.3.1, the latest minor release receives fixes; older minors may be asked to
 upgrade unless an announced support window says otherwise.
 
 ## Threat model
