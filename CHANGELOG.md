@@ -73,6 +73,9 @@ All notable changes to this project are documented here. The project follows
   authorization propagation, typed HTTP failures, disconnect cancellation and
   exception forwarding. Python supplies an asynchronous cancellation-probe port;
   Rust request factories supply typed execution options for cancellation injection.
+- Terminal cancellation, guard, approval, and budget failures now stop routing in
+  every generated runtime, preventing fallback providers from bypassing policy or
+  replacing the original failure category.
 
 ## 0.1.0 — 2026-07-16
 

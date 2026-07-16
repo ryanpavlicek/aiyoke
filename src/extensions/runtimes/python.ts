@@ -456,6 +456,14 @@ class HarnessRuntime:
                 )
                 await self._sleep(delay_ms / 1000)
 
+            if final_failure.kind in {
+                FailureKind.CANCELLED,
+                FailureKind.GUARD_REJECTED,
+                FailureKind.APPROVAL_REQUIRED,
+                FailureKind.BUDGET_EXHAUSTED,
+            }:
+                return await self._finish_failure(request, final_failure)
+
         return await self._finish_failure(request, final_failure)
 
     async def _invoke(
@@ -667,6 +675,17 @@ class RuntimeFacadeTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(event["type"] == "fallback-selected" for event in events))
         self.assertEqual(events[0]["metadata_keys"], ["tenant"])
         self.assertNotIn("input", events[0])
+
+    async def test_terminal_policy_failures_never_fall_through_to_fallbacks(self) -> None:
+        class Adapter:
+            async def invoke(self, request):
+                return ModelFailure(FailureKind.CANCELLED, "cancelled", False)
+
+        result = await HarnessRuntime(
+            self.options, AdapterRegistry().register("primary", Adapter())
+        ).execute(self.request)
+        self.assertIsInstance(result, ModelFailure)
+        self.assertEqual(result.kind, FailureKind.CANCELLED)
 
     async def test_guards_and_approval_fail_closed(self) -> None:
         calls = 0

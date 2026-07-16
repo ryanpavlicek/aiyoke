@@ -513,6 +513,14 @@ export class HarnessRuntime {
             });
           }
         }
+        if (
+          finalFailure.kind === "cancelled" ||
+          finalFailure.kind === "guard-rejected" ||
+          finalFailure.kind === "approval-required" ||
+          finalFailure.kind === "budget-exhausted"
+        ) {
+          return this.#finishFailure(request, finalFailure);
+        }
       }
       return this.#finishFailure(request, finalFailure);
     } finally {
@@ -780,6 +788,20 @@ test("runtime retries, falls back, repairs output, and emits redacted events", a
   assert.ok(events.some((event) => event.type === "fallback-selected"));
   assert.deepEqual(events[0]?.metadataKeys, ["tenant"]);
   assert.equal("input" in (events[0] ?? {}), false);
+});
+
+test("terminal policy failures never fall through to fallback routes", async () => {
+  const adapters = new AdapterRegistry().register("primary", {
+    async invoke() {
+      return {
+        kind: "failure",
+        failure: { kind: "cancelled", message: "cancelled", retryable: false }
+      };
+    }
+  });
+  const result = await new HarnessRuntime(options, { adapters }).execute(request);
+  assert.equal(result.kind, "failure");
+  if (result.kind === "failure") assert.equal(result.failure.kind, "cancelled");
 });
 
 test("runtime fails closed on guards and human approval", async () => {

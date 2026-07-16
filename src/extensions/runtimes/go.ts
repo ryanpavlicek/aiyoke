@@ -542,6 +542,10 @@ func (runtime *HarnessRuntime) executeWithCapacity(
 				})
 			}
 		}
+		switch finalFailure.Kind {
+		case FailureCancelled, FailureGuardRejected, FailureApprovalRequired, FailureBudgetExhausted:
+			return runtime.finishFailure(ctx, request, finalFailure)
+		}
 	}
 	return runtime.finishFailure(ctx, request, finalFailure)
 }
@@ -851,6 +855,28 @@ func TestRuntimeRetryFallbackRepairAndRedactedEvents(t *testing.T) {
 	keys := events.events[0]["metadata_keys"].([]string)
 	if len(keys) != 1 || keys[0] != "tenant" {
 		t.Fatalf("metadata was not redacted: %v", keys)
+	}
+}
+
+type terminalAdapter struct{}
+
+func (terminalAdapter) Invoke(context.Context, ModelRequest) ModelResult {
+	return ModelFailure{Kind: FailureCancelled, Message: "cancelled", Retryable: false}
+}
+
+func TestTerminalPolicyFailuresNeverFallThroughToFallbacks(t *testing.T) {
+	registry := NewAdapterRegistry()
+	if err := registry.Register("primary", terminalAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewHarnessRuntime(testOptions(), RuntimeDependencies{Adapters: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := runtime.Execute(context.Background(), testRequest("terminal"), ExecuteOptions{})
+	failure, ok := result.(ModelFailure)
+	if !ok || failure.Kind != FailureCancelled {
+		t.Fatalf("terminal failure was replaced by fallback: %#v", result)
 	}
 }
 

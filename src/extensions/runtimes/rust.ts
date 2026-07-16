@@ -715,6 +715,15 @@ where
                     }
                 }
             }
+            if matches!(
+                final_failure.kind,
+                FailureKind::Cancelled
+                    | FailureKind::GuardRejected
+                    | FailureKind::ApprovalRequired
+                    | FailureKind::BudgetExhausted
+            ) {
+                return self.finish_failure(&request, final_failure);
+            }
         }
         self.finish_failure(&request, final_failure)
     }
@@ -1168,6 +1177,38 @@ fn runtime_retries_falls_back_repairs_and_redacts_events() {
         .iter()
         .any(|event| matches!(event.kind, RuntimeEventKind::FallbackSelected { .. })));
     assert_eq!(captured[0].context.metadata_keys, vec!["tenant"]);
+}
+
+struct TerminalAdapter;
+
+impl ModelAdapter<(), String> for TerminalAdapter {
+    fn invoke(
+        &self,
+        _request: &ModelRequest<()>,
+        _context: &InvocationContext,
+    ) -> ModelResult<String> {
+        ModelResult::Failure(ModelFailure {
+            kind: FailureKind::Cancelled,
+            message: "cancelled".to_owned(),
+            retryable: false,
+            provider_code: None,
+        })
+    }
+}
+
+#[test]
+fn terminal_policy_failures_never_fall_through_to_fallbacks() {
+    let mut adapters = AdapterRegistry::new();
+    adapters.register("primary", Arc::new(TerminalAdapter)).unwrap();
+    let runtime = HarnessRuntime::new(test_options(), adapters, RuntimePorts::default()).unwrap();
+    let result = runtime.execute(test_request("terminal"), &ExecuteOptions::default());
+    assert!(matches!(
+        result,
+        ModelResult::Failure(ModelFailure {
+            kind: FailureKind::Cancelled,
+            ..
+        })
+    ));
 }
 
 struct RejectingGuard;
