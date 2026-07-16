@@ -31,9 +31,13 @@ manifest alone does not select a framework.
 
 When runtime generation is enabled, the selected stack also resolves one
 registered application-runtime template for each language. Current generated
-source uses only that language's standard library and includes provider-neutral
-ports plus retry/backoff, budget, and circuit-breaker primitives. Native compiler,
-formatter, and adversarial conformance jobs are required before 0.3 support is
+source uses only that language's standard library and includes registry-driven
+provider ports, typed results and failures, deadlines and cancellation, bounded
+retry/fallback and circuit breaking, validation and repair, redacted lifecycle
+events, guards and approvals, cache/evaluation ports, token and cost budgets, and
+bounded batch concurrency. CI executes the generated native test suites and runs
+the applicable compilers, type checkers, and formatters. Framework request-lifecycle
+adapters and broader adversarial fixtures are still required before 0.3 support is
 considered final.
 
 ## Dogfood acceptance matrix

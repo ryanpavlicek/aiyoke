@@ -18,7 +18,11 @@ The first release implements this contract:
 
 First-party language support is limited to Python, TypeScript, JavaScript, Rust, and Go.
 When schema-v3 runtime generation is enabled, each selected language receives
-registered reliability and integration primitives under `aiyoke-runtime/`.
+a provider-neutral, registry-driven execution facade and its native conformance
+tests under `aiyoke-runtime/`. The generated runtime handles deadlines,
+cancellation, retries, fallbacks, circuit breaking, output validation and repair,
+redacted events, guards and approval, cache/evaluation ports, token and cost
+budgets, and bounded batch concurrency without adding a provider SDK dependency.
 
 First-party targets are Claude Code, Codex, ChatGPT plugins, Grok Build, the xAI/Grok API,
 and OpenRouter. Provider credentials are referenced by environment-variable name and are never

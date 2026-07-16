@@ -18,8 +18,11 @@ All notable changes to this project are documented here. The project follows
   paths, parser resource limits, aliases, duplicate fields, and hostile shapes.
 - Evidence-based 0.3 release gates and a production runtime-harness contract.
 - Registered provider-neutral runtime template extensions for Python,
-  TypeScript, JavaScript, Rust, and Go, with typed integration ports, bounded
-  retry timing, budget checks, circuit-breaker state, and resolved policy files.
+  TypeScript, JavaScript, Rust, and Go, with registered adapters and guards,
+  typed lifecycle results, deadlines and cancellation, retry/fallback/circuit
+  breaking, structured-output validation and repair, redacted events, approval,
+  cache and evaluation ports, budgets, bounded concurrency, resolved policy
+  files, and native conformance tests.
 
 ## 0.1.0 — 2026-07-16
 

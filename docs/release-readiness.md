@@ -22,16 +22,16 @@ that does not cover the stated scope are not completion evidence.
 | Deterministic planning and atomic application | Proven | Compiler, filesystem, integration, and five-stack dogfood tests cover the 0.1 contract. |
 | Supported target rendering | Partial | Renderer tests and manual Claude/Grok/OpenRouter checks exist; reproducible client-version fixtures are still missing. |
 | Supported language/framework rendering | Partial | Representative single-stack fixtures exist; polyglot and monorepo composition are missing. |
-| Schema lifecycle | Proven | Schema v2, adjacent reversible registry steps, dry-run, explicit downgrade consent, content-addressed backups, rollback, corruption tests, and lossy-downgrade refusal are covered in unit and integration suites. |
+| Schema lifecycle | Proven | Schemas v1 through v3, adjacent reversible registry steps, dry-run, explicit downgrade consent, content-addressed backups, rollback, corruption tests, and lossy-downgrade refusal are covered in unit and integration suites. |
 | Configuration editing | Proven | `aiyoke config` supports deterministic flags, dry-run, and explicit TTY-only interaction; confirmation, cancellation, invalid input, validation, backup, and no-write behavior are tested. |
 | Extension compatibility | Partial | In-process registration is tested; no distributable fixture suite or compatibility command exists. |
 | Signed extension discovery | Missing | External loaders must be supplied programmatically and have no signed manifest or trust policy. |
 | Renderer isolation | Missing | Third-party renderers execute in-process with the host's authority. |
-| Adversarial and property testing | Partial | Focused unsafe-path and malformed-input cases exist; generative and malicious extension suites are missing. |
+| Adversarial and property testing | Partial | Seeded fast-check suites cover configuration round trips, paths, parser limits, aliases, duplicates, and hostile shapes; malicious extension, filesystem-race, and generated-runtime adversarial matrices remain open. |
 | CI | Partial | Linux and Node 22/24 run the full check; Windows, macOS, packaging, security, and release jobs are missing. |
 | Distribution and rollback | Missing | No publish workflow, provenance, package smoke test, SBOM, upgrade test, or rollback procedure exists. |
 | Public documentation | Partial | Architecture and extension notes exist; README installation, tutorials, recipes, API reference, troubleshooting, and release operations are incomplete. |
-| Production runtime templates | Partial | Schema v3 models composed production/custom policy; registered templates generate executable typed ports, retry/backoff, budget, and circuit-breaker primitives for all five languages. Full orchestrators, framework adapters, native-toolchain CI, and every contract criterion remain open. |
+| Production runtime templates | Partial | All five registered templates generate a standard-library execution facade with adapter/guard registries, typed lifecycle state, deadlines/cancellation, retry/fallback/circuit breaking, validation/repair, redacted events, approval, cache/evaluation ports, budgets, and bounded batch concurrency. Generated native suites pass Node, TypeScript, Python, Go, and Rust compiler/formatter gates in CI. Framework adapters, tool execution, evaluation runners, reference provider integrations, and the remaining adversarial contract matrix are still open. |
 
 ## 0.2 release gates
 
@@ -53,8 +53,10 @@ that does not cover the stated scope are not completion evidence.
    registration points without adding provider branches to the core.
 
 Current evidence for gates 1 and 2: commit `bcf12ed` passed GitHub CI on Node 22
-and 24 after a 96-test local gate. Subsequent schema-v3/runtime work remains
-unreleased and must pass the same gates plus native runtime validation.
+and 24 after a 96-test local gate. The schema-v3 runtime facade and generated
+native suites passed Node, TypeScript, Python, Go, and Rust validation in GitHub
+Actions run `29521118163`; the work remains unreleased until every gate below is
+proven.
 
 ## 0.3 release gates
 
