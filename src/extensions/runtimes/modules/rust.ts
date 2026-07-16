@@ -372,9 +372,11 @@ impl ToolRunner {
         let (sender, receiver) = mpsc::sync_channel(1);
         let invocation_tool = Arc::clone(&tool);
         thread::spawn(move || {
-            let outcome = catch_unwind(AssertUnwindSafe(|| invocation_tool.invoke(input, invocation)))
-                .map_err(|_| ())
-                .and_then(|value| value);
+            let outcome = catch_unwind(AssertUnwindSafe(|| {
+                invocation_tool.invoke(input, invocation)
+            }))
+            .map_err(|_| ())
+            .and_then(|value| value);
             let _ = sender.send(outcome);
         });
         loop {
@@ -401,35 +403,37 @@ impl ToolRunner {
             }
             let wait = (deadline - now).min(Duration::from_millis(5));
             match receiver.recv_timeout(wait) {
-                Ok(Ok(output)) => match catch_unwind(AssertUnwindSafe(|| {
-                    tool.validate_output(output.as_ref())
-                })) {
-                    Ok(Ok(())) => {
-                        self.emit(&request, "tool-succeeded");
-                        return ToolExecutionResult::Success {
-                            value: output,
-                            duration: (self.now)().saturating_duration_since(started),
-                        };
+                Ok(Ok(output)) => {
+                    match catch_unwind(AssertUnwindSafe(|| {
+                        tool.validate_output(output.as_ref())
+                    })) {
+                        Ok(Ok(())) => {
+                            self.emit(&request, "tool-succeeded");
+                            return ToolExecutionResult::Success {
+                                value: output,
+                                duration: (self.now)().saturating_duration_since(started),
+                            };
+                        }
+                        Ok(Err(code)) => {
+                            return self.failure(
+                                &request,
+                                "invalid-output",
+                                "output",
+                                "Tool output validation failed.",
+                                Some(&code),
+                            )
+                        }
+                        Err(_) => {
+                            return self.failure(
+                                &request,
+                                "invalid-output",
+                                "output",
+                                "Tool output validation failed.",
+                                Some("validator_error"),
+                            )
+                        }
                     }
-                    Ok(Err(code)) => {
-                        return self.failure(
-                            &request,
-                            "invalid-output",
-                            "output",
-                            "Tool output validation failed.",
-                            Some(&code),
-                        )
-                    }
-                    Err(_) => {
-                        return self.failure(
-                            &request,
-                            "invalid-output",
-                            "output",
-                            "Tool output validation failed.",
-                            Some("validator_error"),
-                        )
-                    }
-                },
+                }
                 Ok(Err(())) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                     return self.failure(
                         &request,
@@ -770,10 +774,7 @@ pub struct EvaluationRunner {
 }
 
 impl EvaluationRunner {
-    pub fn new(
-        max_concurrency: usize,
-        registry: Arc<EvaluatorRegistry>,
-    ) -> Result<Self, String> {
+    pub fn new(max_concurrency: usize, registry: Arc<EvaluatorRegistry>) -> Result<Self, String> {
         if max_concurrency == 0 {
             return Err("max concurrency must be positive".to_owned());
         }
@@ -849,32 +850,51 @@ impl EvaluationRunner {
                         model: suite.model.clone(),
                         policy_fingerprint: suite.policy_fingerprint.clone(),
                     };
-                    let result = catch_unwind(AssertUnwindSafe(|| {
-                        subject.invoke(&item.input, &context)
-                    }));
+                    let result =
+                        catch_unwind(AssertUnwindSafe(|| subject.invoke(&item.input, &context)));
                     let case_result = match result {
                         Ok(ModelResult::Success { value, .. }) => {
                             match catch_unwind(AssertUnwindSafe(|| {
                                 evaluator.score(&value, &item.expected)
                             })) {
-                                Ok(Ok(score)) if score.is_finite() && (0.0..=1.0).contains(&score) => {
+                                Ok(Ok(score))
+                                    if score.is_finite() && (0.0..=1.0).contains(&score) =>
+                                {
                                     EvaluationCaseResult::Scored {
-                                        metadata: metadata(suite, item, now().saturating_duration_since(started)),
+                                        metadata: metadata(
+                                            suite,
+                                            item,
+                                            now().saturating_duration_since(started),
+                                        ),
                                         passed: score >= suite.threshold,
                                         score,
                                     }
                                 }
                                 _ => EvaluationCaseResult::ScorerError {
-                                    metadata: metadata(suite, item, now().saturating_duration_since(started)),
+                                    metadata: metadata(
+                                        suite,
+                                        item,
+                                        now().saturating_duration_since(started),
+                                    ),
                                 },
                             }
                         }
-                        Ok(ModelResult::Failure(failure)) => EvaluationCaseResult::ProviderFailure {
-                            metadata: metadata(suite, item, now().saturating_duration_since(started)),
-                            failure_kind: format!("{:?}", failure.kind),
-                        },
+                        Ok(ModelResult::Failure(failure)) => {
+                            EvaluationCaseResult::ProviderFailure {
+                                metadata: metadata(
+                                    suite,
+                                    item,
+                                    now().saturating_duration_since(started),
+                                ),
+                                failure_kind: format!("{:?}", failure.kind),
+                            }
+                        }
                         Err(_) => EvaluationCaseResult::ProviderFailure {
-                            metadata: metadata(suite, item, now().saturating_duration_since(started)),
+                            metadata: metadata(
+                                suite,
+                                item,
+                                now().saturating_duration_since(started),
+                            ),
                             failure_kind: "subject_error".to_owned(),
                         },
                     };
@@ -884,10 +904,14 @@ impl EvaluationRunner {
         });
         let mut ordered = Vec::with_capacity(suite.cases.len());
         for (index, result) in results.lock().unwrap().iter_mut().enumerate() {
-            ordered.push(result.take().unwrap_or_else(|| EvaluationCaseResult::Skipped {
-                metadata: metadata(suite, &suite.cases[index], Duration::ZERO),
-                reason: "cancelled".to_owned(),
-            }));
+            ordered.push(
+                result
+                    .take()
+                    .unwrap_or_else(|| EvaluationCaseResult::Skipped {
+                        metadata: metadata(suite, &suite.cases[index], Duration::ZERO),
+                        reason: "cancelled".to_owned(),
+                    }),
+            );
         }
         let mut report = summarize(suite, ordered);
         if let Some(sink) = &self.report_sink {
@@ -1085,7 +1109,11 @@ use std::sync::Arc;
 struct Subject;
 
 impl EvaluationSubject<String, String> for Subject {
-    fn invoke(&self, input: &String, _context: &EvaluationInvocationContext) -> ModelResult<String> {
+    fn invoke(
+        &self,
+        input: &String,
+        _context: &EvaluationInvocationContext,
+    ) -> ModelResult<String> {
         if input == "three" {
             ModelResult::Failure(ModelFailure {
                 kind: FailureKind::Provider,
