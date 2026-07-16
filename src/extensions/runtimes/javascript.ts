@@ -571,6 +571,35 @@ test("terminal policy failures never fall through to fallback routes", async () 
     if (result.kind === "failure")
         assert.equal(result.failure.kind, "cancelled");
 });
+test("deadline expiry and caller cancellation remain distinct", async () => {
+    const slow = {
+        invoke(_request, signal) {
+            return new Promise((resolve) => {
+                signal.addEventListener("abort", () => resolve({
+                    kind: "success",
+                    value: "late",
+                    usage: { inputTokens: 1, outputTokens: 1, estimatedCostUsd: 0 }
+                }), { once: true });
+            });
+        }
+    };
+    const runtime = new HarnessRuntime({
+        ...options,
+        timeoutMs: 1,
+        retry: { ...options.retry, maxAttempts: 1 },
+        fallbackRoutes: []
+    }, { adapters: new AdapterRegistry().register("primary", slow) });
+    const timedOut = await runtime.execute(request);
+    assert.equal(timedOut.kind, "failure");
+    if (timedOut.kind === "failure")
+        assert.equal(timedOut.failure.kind, "timeout");
+    const cancellation = new AbortController();
+    cancellation.abort();
+    const cancelled = await runtime.execute(request, { signal: cancellation.signal });
+    assert.equal(cancelled.kind, "failure");
+    if (cancelled.kind === "failure")
+        assert.equal(cancelled.failure.kind, "cancelled");
+});
 test("runtime fails closed on guards and human approval", async () => {
     let calls = 0;
     const adapters = new AdapterRegistry().register("primary", {

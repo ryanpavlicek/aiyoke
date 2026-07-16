@@ -1228,6 +1228,62 @@ fn terminal_policy_failures_never_fall_through_to_fallbacks() {
     ));
 }
 
+struct SlowAdapter;
+
+impl ModelAdapter<(), String> for SlowAdapter {
+    fn invoke(
+        &self,
+        _request: &ModelRequest<()>,
+        context: &InvocationContext,
+    ) -> ModelResult<String> {
+        while !context.cancellation.is_cancelled() {
+            thread::sleep(Duration::from_millis(1));
+        }
+        ModelResult::Success {
+            value: "late".to_owned(),
+            usage: Usage::default(),
+        }
+    }
+}
+
+#[test]
+fn deadline_and_caller_cancellation_remain_distinct() {
+    let mut adapters = AdapterRegistry::new();
+    adapters
+        .register("primary", Arc::new(SlowAdapter))
+        .unwrap();
+    let mut options = test_options();
+    options.timeout = Duration::from_millis(1);
+    options.retry.max_attempts = 1;
+    options.fallback_routes.clear();
+    let runtime = HarnessRuntime::new(options, adapters, RuntimePorts::default()).unwrap();
+    let timed_out = runtime.execute(test_request("timeout"), &ExecuteOptions::default());
+    assert!(matches!(
+        timed_out,
+        ModelResult::Failure(ModelFailure {
+            kind: FailureKind::Timeout,
+            ..
+        })
+    ));
+
+    let cancellation = runtime::CancellationToken::default();
+    cancellation.cancel();
+    let cancelled = runtime.execute(
+        test_request("cancelled"),
+        &ExecuteOptions {
+            cancellation,
+            ..ExecuteOptions::default()
+        },
+    );
+    assert!(matches!(
+        cancelled,
+        ModelResult::Failure(ModelFailure {
+            kind: FailureKind::Cancelled,
+            ..
+        })
+    ));
+}
+
 struct RejectingGuard;
 
 impl InputGuard<()> for RejectingGuard {

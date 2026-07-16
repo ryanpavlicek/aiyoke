@@ -59,6 +59,10 @@ Generated runtime templates must provide:
 - typed failure categories and deliberate graceful-degradation policies; and
 - deterministic tests for time, concurrency, malformed output, and exhausted paths.
 
+Native acceptance cases force both deadline expiry and caller cancellation through
+the same adapter and require distinct `timeout` and `cancelled` outcomes. This
+prevents an aborted request from being retried or reported as provider failure.
+
 ## 2. Observability
 
 Generated runtime templates must emit correlated, redacted events for model

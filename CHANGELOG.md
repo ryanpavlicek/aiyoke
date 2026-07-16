@@ -83,6 +83,8 @@ All notable changes to this project are documented here. The project follows
 - Machine-readable `capabilities.json` output for every language, with composed
   implemented and integration-port variants for all seven production families,
   plus exact template and native acceptance artifact references.
+- Native deadline-versus-caller-cancellation adversarial cases for every runtime;
+  timeouts remain retryable and cancellation remains terminal and distinguishable.
 
 ## 0.1.0 — 2026-07-16
 

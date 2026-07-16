@@ -889,6 +889,40 @@ func TestTerminalPolicyFailuresNeverFallThroughToFallbacks(t *testing.T) {
 	}
 }
 
+type slowAdapter struct{}
+
+func (slowAdapter) Invoke(ctx context.Context, _ ModelRequest) ModelResult {
+	<-ctx.Done()
+	return ModelSuccess{Value: "late"}
+}
+
+func TestDeadlineAndCallerCancellationRemainDistinct(t *testing.T) {
+	registry := NewAdapterRegistry()
+	if err := registry.Register("primary", slowAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	options := testOptions()
+	options.Timeout = time.Millisecond
+	options.Retry.MaxAttempts = 1
+	options.FallbackRoutes = nil
+	runtime, err := NewHarnessRuntime(options, RuntimeDependencies{Adapters: registry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	timedOut := runtime.Execute(context.Background(), testRequest("timeout"), ExecuteOptions{})
+	failure, ok := timedOut.(ModelFailure)
+	if !ok || failure.Kind != FailureTimeout {
+		t.Fatalf("deadline was not classified as timeout: %#v", timedOut)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelled := runtime.Execute(ctx, testRequest("cancelled"), ExecuteOptions{})
+	failure, ok = cancelled.(ModelFailure)
+	if !ok || failure.Kind != FailureCancelled {
+		t.Fatalf("caller cancellation was not preserved: %#v", cancelled)
+	}
+}
+
 type rejectingGuard struct{}
 
 func (rejectingGuard) Check(context.Context, GuardContext) (GuardDecision, error) {

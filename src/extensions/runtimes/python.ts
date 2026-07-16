@@ -718,6 +718,34 @@ class RuntimeFacadeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, ModelFailure)
         self.assertEqual(result.kind, FailureKind.CANCELLED)
 
+    async def test_deadline_and_caller_cancellation_remain_distinct(self) -> None:
+        class SlowAdapter:
+            async def invoke(self, request):
+                await asyncio.sleep(60)
+                return ModelSuccess("late", Usage(1, 1, 0))
+
+        options = RuntimeOptions(
+            **{
+                **self.options.__dict__,
+                "timeout_ms": 1,
+                "retry": RetryOptions(1, 1, 1, 0),
+                "fallback_routes": [],
+            }
+        )
+        runtime = HarnessRuntime(
+            options, AdapterRegistry().register("primary", SlowAdapter())
+        )
+        timed_out = await runtime.execute(self.request)
+        self.assertIsInstance(timed_out, ModelFailure)
+        self.assertEqual(timed_out.kind, FailureKind.TIMEOUT)
+
+        task = asyncio.create_task(runtime.execute(self.request))
+        await asyncio.sleep(0)
+        task.cancel()
+        cancelled = await task
+        self.assertIsInstance(cancelled, ModelFailure)
+        self.assertEqual(cancelled.kind, FailureKind.CANCELLED)
+
     async def test_guards_and_approval_fail_closed(self) -> None:
         calls = 0
 
