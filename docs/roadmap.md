@@ -6,7 +6,7 @@ Version 0.3 is the first public-ready release. Version 1.0 stabilizes contracts
 after public field use rather than serving as the first usable build. See
 `docs/release-readiness.md` for the evidence required at each gate.
 
-## 0.1 — first release (current)
+## 0.1 — foundation (complete)
 
 - Canonical harness schema with explicit target and lifecycle variants.
 - Deterministic no-write planning, atomic/idempotent application, lock manifests,
@@ -19,7 +19,7 @@ after public field use rather than serving as the first usable build. See
 - Enforced layered dependencies, a lazy public facade, CI, governance, extension
   authoring documentation, and architectural decisions.
 
-## 0.2 — composition hardening
+## 0.2 — composition hardening (complete)
 
 - Expand golden fixtures from representative projects into polyglot monorepos.
 - Add deterministic interactive and non-interactive configuration editing.
@@ -30,7 +30,7 @@ after public field use rather than serving as the first usable build. See
 - Define a provider-neutral runtime-harness domain contract and generate the
   first reliability, observability, evaluation, safety, and budget primitives.
 
-## 0.3 — extension ecosystem
+## 0.3 — public release candidate
 
 - Add signed third-party extension discovery without expanding core dependencies.
 - Publish extension-authoring examples and a standalone compatibility test harness.

@@ -22,10 +22,11 @@ the core.
 
 ## Status
 
-The repository is working toward the public 0.3 release. Every claimed release
-gate is tracked with reproducible evidence in
-[Public release readiness](docs/release-readiness.md); unreleased or partially
-proven behavior is not silently presented as complete.
+Version 0.3.0 is the first public-ready release candidate. Its code, target,
+language, framework, runtime, package, and clean-clone gates have reproducible
+evidence in [Public release readiness](docs/release-readiness.md). Publication
+remains a deliberate maintainer action behind the protected npm environment;
+unproven behavior is not silently presented as complete.
 
 ## What Aiyoke generates
 
