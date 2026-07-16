@@ -332,7 +332,9 @@ impl CircuitBreaker {
 
     pub fn state(&mut self, now: Instant) -> CircuitState {
         if self.state == CircuitState::Open
-            && self.opened_at.is_some_and(|opened| now.duration_since(opened) >= self.reset_after)
+            && self
+                .opened_at
+                .is_some_and(|opened| now.duration_since(opened) >= self.reset_after)
         {
             self.state = CircuitState::HalfOpen;
         }
@@ -392,7 +394,10 @@ struct GatePermit<'a> {
 
 impl ConcurrencyGate {
     fn acquire(&self, cancellation: &CancellationToken) -> Option<GatePermit<'_>> {
-        let mut active = self.active.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         while *active >= self.maximum {
             if cancellation.is_cancelled() {
                 return None;
@@ -408,7 +413,10 @@ impl ConcurrencyGate {
     }
 
     fn release(&self) {
-        let mut active = self.active.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         *active = active.saturating_sub(1);
         self.changed.notify_one();
     }
@@ -613,7 +621,11 @@ where
                         attempt,
                     },
                 );
-                match self.invoke(adapter.clone(), request.clone(), &execute_options.cancellation) {
+                match self.invoke(
+                    adapter.clone(),
+                    request.clone(),
+                    &execute_options.cancellation,
+                ) {
                     ModelResult::Success { value, usage } => {
                         let resolved = self.validate_and_repair(
                             &request,
@@ -753,9 +765,7 @@ where
                     true,
                 ));
             }
-            let wait = deadline
-                .duration_since(now)
-                .min(Duration::from_millis(10));
+            let wait = deadline.duration_since(now).min(Duration::from_millis(10));
             match receiver.recv_timeout(wait) {
                 Ok(result) => return result,
                 Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -945,18 +955,17 @@ fn sleep_cancellable(delay: Duration, cancellation: &CancellationToken) -> bool 
 const TEST_SOURCE = `#[path = "runtime.rs"]
 mod runtime;
 
+use runtime::{
+    enforce_budget, retry_delay, AdapterRegistry, CircuitBreaker, ExecuteOptions, FailureKind,
+    GuardRegistry, HarnessRuntime, InputGuard, InvocationContext, ModelAdapter, ModelFailure,
+    ModelRequest, ModelResult, OutputValidator, RepairPort, RetryOptions, RuntimeEvent,
+    RuntimeEventKind, RuntimeOptions, RuntimePorts, Usage, ValidationResult,
+};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use runtime::{
-    enforce_budget, retry_delay, AdapterRegistry, CircuitBreaker, ExecuteOptions,
-    FailureKind, GuardRegistry, HarnessRuntime, InputGuard, InvocationContext,
-    ModelAdapter, ModelFailure, ModelRequest, ModelResult, OutputValidator,
-    RepairPort, RetryOptions, RuntimeEvent, RuntimeEventKind, RuntimeOptions,
-    RuntimePorts, Usage, ValidationResult,
-};
 
 fn test_request(id: &str) -> ModelRequest<()> {
     ModelRequest {
@@ -1248,7 +1257,11 @@ fn runtime_batch_concurrency_is_bounded() {
     let runtime = HarnessRuntime::new(options, adapters, RuntimePorts::default()).unwrap();
     let results = runtime
         .execute_batch(
-            &[test_request("one"), test_request("two"), test_request("three")],
+            &[
+                test_request("one"),
+                test_request("two"),
+                test_request("three"),
+            ],
             &ExecuteOptions::default(),
         )
         .unwrap();
