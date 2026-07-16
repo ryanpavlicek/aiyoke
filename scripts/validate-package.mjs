@@ -12,6 +12,7 @@ const requiredEntries = [
   "package/CHANGELOG.md",
   "package/LICENSE",
   "package/README.md",
+  "package/SECURITY.md",
   "package/dist/cli.js",
   "package/dist/core/index.d.ts",
   "package/dist/core/index.js",
@@ -21,10 +22,12 @@ const requiredEntries = [
   "package/dist/index.js",
   "package/docs/architecture.md",
   "package/docs/extensions.md",
+  "package/examples/extensions/hello-target/aiyoke-extension.template.json",
+  "package/examples/extensions/hello-target/package/index.mjs",
   "package/package.json"
 ];
 const forbidden = [
-  /^package\/(?:src|test|coverage|node_modules|examples)(?:\/|$)/,
+  /^package\/(?:src|test|coverage|node_modules)(?:\/|$)/,
   /^package\/(?:\.env(?:\..*)?|AGENTS\.md)$/,
   /(?:^|\/)\.aiyoke(?:\/|$)/
 ];

@@ -62,6 +62,9 @@ All notable changes to this project are documented here. The project follows
 - Exact npm tarball content/install/import/CLI validation and a protected OIDC
   release workflow with checksums, SPDX SBOM, GitHub attestations, npm provenance,
   immutable release assets, and documented deprecation/rollback operations.
+- Public product documentation with installation and five-minute setup, complete
+  CLI/public-API references, concepts, extension security, troubleshooting,
+  migration/recovery, release operations, and explicit hosted-service boundaries.
 
 ## 0.1.0 — 2026-07-16
 
