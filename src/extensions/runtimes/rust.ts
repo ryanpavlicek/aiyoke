@@ -1,4 +1,5 @@
 import { rustIntegrations } from "./integrations/rust.js";
+import { rustRuntimeModules } from "./modules/rust.js";
 import { rustProviders } from "./providers/rust.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
@@ -1280,6 +1281,7 @@ export const rustRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "runtime_test.rs",
   testSource: TEST_SOURCE,
+  modules: rustRuntimeModules,
   integrations: rustIntegrations,
   providers: rustProviders
 });

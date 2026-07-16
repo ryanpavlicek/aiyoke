@@ -648,22 +648,26 @@ func (ScoredEvaluationCase) evaluationCaseResult()          {}
 func (ProviderFailureEvaluationCase) evaluationCaseResult() {}
 func (ScorerErrorEvaluationCase) evaluationCaseResult()     {}
 func (SkippedEvaluationCase) evaluationCaseResult()         {}
-func (result ScoredEvaluationCase) metadata() EvaluationCaseMetadata { return result.EvaluationCaseMetadata }
+func (result ScoredEvaluationCase) metadata() EvaluationCaseMetadata {
+	return result.EvaluationCaseMetadata
+}
 func (result ProviderFailureEvaluationCase) metadata() EvaluationCaseMetadata {
 	return result.EvaluationCaseMetadata
 }
 func (result ScorerErrorEvaluationCase) metadata() EvaluationCaseMetadata {
 	return result.EvaluationCaseMetadata
 }
-func (result SkippedEvaluationCase) metadata() EvaluationCaseMetadata { return result.EvaluationCaseMetadata }
+func (result SkippedEvaluationCase) metadata() EvaluationCaseMetadata {
+	return result.EvaluationCaseMetadata
+}
 
 type EvaluationDelivery interface{ evaluationDelivery() }
 type EvaluationNotConfigured struct{}
 type EvaluationStored struct{}
 type EvaluationDeliveryFailed struct{ Code string }
 
-func (EvaluationNotConfigured) evaluationDelivery()   {}
-func (EvaluationStored) evaluationDelivery()          {}
+func (EvaluationNotConfigured) evaluationDelivery()  {}
+func (EvaluationStored) evaluationDelivery()         {}
 func (EvaluationDeliveryFailed) evaluationDelivery() {}
 
 type EvaluationReport struct {

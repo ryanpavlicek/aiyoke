@@ -96,6 +96,7 @@ const runtimeModuleArtifacts = new Map([
       "modules/test_evaluation.py"
     ]
   ],
+  ["rust", ["tooling.rs", "tooling_test.rs", "evaluation.rs", "evaluation_test.rs"]],
   [
     "typescript",
     [

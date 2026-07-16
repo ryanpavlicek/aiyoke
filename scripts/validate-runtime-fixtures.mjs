@@ -133,6 +133,10 @@ try {
     "--check",
     join(rustDirectory, "runtime.rs"),
     join(rustDirectory, "runtime_test.rs"),
+    join(rustDirectory, "tooling.rs"),
+    join(rustDirectory, "tooling_test.rs"),
+    join(rustDirectory, "evaluation.rs"),
+    join(rustDirectory, "evaluation_test.rs"),
     join(rustDirectory, "responses_provider.rs"),
     join(rustDirectory, "responses_provider_test.rs")
   ]);
@@ -145,6 +149,20 @@ try {
     join(rustDirectory, "runtime_test.rs")
   ]);
   run(join(rustDirectory, process.platform === "win32" ? "runtime_test.exe" : "runtime_test"), []);
+  for (const module of ["tooling", "evaluation"]) {
+    run("rustc", [
+      "--edition",
+      "2021",
+      "--test",
+      "--out-dir",
+      rustDirectory,
+      join(rustDirectory, `${module}_test.rs`)
+    ]);
+    run(
+      join(rustDirectory, process.platform === "win32" ? `${module}_test.exe` : `${module}_test`),
+      []
+    );
+  }
   run("rustc", [
     "--edition",
     "2021",
