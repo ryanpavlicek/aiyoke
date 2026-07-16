@@ -21,6 +21,16 @@ const testFileNames = new Map([
   ["rust", "runtime_test.rs"]
 ]);
 
+const capabilityFamilies = [
+  "reliability",
+  "observability",
+  "evaluation-and-iteration",
+  "safety-and-control",
+  "developer-experience-and-consistency",
+  "maintainability-and-portability",
+  "cost-and-performance"
+] as const;
+
 const frameworkIntegrations: ReadonlyMap<
   string,
   readonly (readonly [framework: string, path: string])[]
@@ -170,6 +180,7 @@ describe("runtime template extensions", () => {
         `aiyoke-runtime/${language}/${expectedFile}`,
         `aiyoke-runtime/${language}/${expectedTestFile}`,
         `aiyoke-runtime/${language}/policy.json`,
+        `aiyoke-runtime/${language}/capabilities.json`,
         `aiyoke-runtime/${language}/README.md`,
         ...(runtimeModuleArtifacts.get(language) ?? []).map(
           (path) => `aiyoke-runtime/${language}/${path}`
@@ -252,6 +263,38 @@ describe("runtime template extensions", () => {
       const guidance = artifacts.find((artifact) => artifact.path.endsWith("README.md"));
       for (const [framework] of integrations) {
         expect(guidance?.content).toContain(`\`${framework}\``);
+      }
+      const capabilityArtifact = artifacts.find((artifact) =>
+        artifact.path.endsWith("capabilities.json")
+      );
+      const capabilityManifest = JSON.parse(capabilityArtifact?.content ?? "null") as {
+        readonly schemaVersion: number;
+        readonly language: string;
+        readonly families: readonly {
+          readonly id: string;
+          readonly components: readonly {
+            readonly kind: string;
+            readonly templateArtifacts?: readonly string[];
+            readonly acceptanceArtifacts: readonly string[];
+          }[];
+        }[];
+      };
+      expect(capabilityManifest.schemaVersion).toBe(1);
+      expect(capabilityManifest.language).toBe(language);
+      expect(capabilityManifest.families.map(({ id }) => id)).toEqual(capabilityFamilies);
+      for (const family of capabilityManifest.families) {
+        expect(family.components.map(({ kind }) => kind)).toEqual([
+          "implemented",
+          "integration-port"
+        ]);
+        expect(
+          family.components.every(({ acceptanceArtifacts }) => acceptanceArtifacts.length > 0)
+        ).toBe(true);
+        expect(
+          family.components
+            .filter(({ kind }) => kind === "integration-port")
+            .every(({ templateArtifacts }) => (templateArtifacts?.length ?? 0) > 0)
+        ).toBe(true);
       }
     }
   });

@@ -94,6 +94,9 @@ The generated ${definition.testFileName} is a native conformance starting point.
 Keep it running as the runtime is integrated and extend it with provider failure,
 timeout, malformed-output, cancellation, and concurrency cases.
 
+The machine-readable \`capabilities.json\` records all seven production capability
+families and distinguishes executable first-party behavior from integration ports.
+
 ${integrationGuidance}
 
 ${providerGuidance}
@@ -107,6 +110,176 @@ the environment or the consuming application's secret manager at runtime.
 
 function policyJson(policy: RuntimePolicy): string {
   return `${JSON.stringify({ schemaVersion: 1, policy }, undefined, 2)}\n`;
+}
+
+function capabilityManifest(
+  definition: RuntimeTemplateDefinition,
+  modules: readonly RuntimeModuleDefinition[],
+  integrations: readonly FrameworkIntegrationDefinition[],
+  providers: readonly ProviderIntegrationDefinition[]
+): string {
+  const moduleArtifacts = (id: string) =>
+    modules
+      .filter((module) => module.id === id)
+      .flatMap((module) => module.artifacts.map(({ path }) => path));
+  const providerArtifacts = providers.flatMap((provider) =>
+    provider.artifacts.map(({ path }) => path)
+  );
+  const frameworkArtifacts = integrations.map(({ path }) => path);
+  const runtimeAcceptance = [definition.testFileName];
+  const manifest = {
+    schemaVersion: 1,
+    language: definition.language,
+    families: [
+      {
+        id: "reliability",
+        components: [
+          {
+            kind: "implemented",
+            behaviors: [
+              "bounded-retry",
+              "deadline-and-cancellation",
+              "fallback-routing",
+              "circuit-breaking",
+              "structured-output-validation-and-repair"
+            ],
+            acceptanceArtifacts: runtimeAcceptance
+          },
+          {
+            kind: "integration-port",
+            contract: "ModelAdapter and RepairPort",
+            templateArtifacts: [definition.fileName],
+            acceptanceArtifacts: runtimeAcceptance
+          }
+        ]
+      },
+      {
+        id: "observability",
+        components: [
+          {
+            kind: "implemented",
+            behaviors: ["correlated-redacted-events", "latency-usage-and-cost", "cache-outcomes"],
+            acceptanceArtifacts: runtimeAcceptance
+          },
+          {
+            kind: "integration-port",
+            contract: "EventSink",
+            templateArtifacts: [definition.fileName, ...moduleArtifacts("tooling")],
+            acceptanceArtifacts: [
+              definition.testFileName,
+              ...moduleArtifacts("tooling").filter((path) => path.includes("test"))
+            ]
+          }
+        ]
+      },
+      {
+        id: "evaluation-and-iteration",
+        components: [
+          {
+            kind: "implemented",
+            behaviors: ["versioned-suites", "deterministic-sampling", "baseline-regression"],
+            acceptanceArtifacts: moduleArtifacts("evaluation").filter((path) =>
+              path.includes("test")
+            )
+          },
+          {
+            kind: "integration-port",
+            contract: "EvaluationReportSink and HumanFeedbackPort",
+            templateArtifacts: moduleArtifacts("evaluation"),
+            acceptanceArtifacts: moduleArtifacts("evaluation").filter((path) =>
+              path.includes("test")
+            )
+          }
+        ]
+      },
+      {
+        id: "safety-and-control",
+        components: [
+          {
+            kind: "implemented",
+            behaviors: ["input-output-tool-guards", "fail-closed-approval", "policy-audit-events"],
+            acceptanceArtifacts: [
+              definition.testFileName,
+              ...moduleArtifacts("tooling").filter((path) => path.includes("test"))
+            ]
+          },
+          {
+            kind: "integration-port",
+            contract: "Guard and ApprovalPort",
+            templateArtifacts: [definition.fileName, ...moduleArtifacts("tooling")],
+            acceptanceArtifacts: [
+              definition.testFileName,
+              ...moduleArtifacts("tooling").filter((path) => path.includes("test"))
+            ]
+          }
+        ]
+      },
+      {
+        id: "developer-experience-and-consistency",
+        components: [
+          {
+            kind: "implemented",
+            behaviors: ["shared-lifecycle", "native-conformance-suite", "thin-framework-adapters"],
+            acceptanceArtifacts: [definition.testFileName, ...frameworkArtifacts]
+          },
+          {
+            kind: "integration-port",
+            contract: "Framework request factory",
+            templateArtifacts: frameworkArtifacts.length > 0 ? frameworkArtifacts : ["README.md"],
+            acceptanceArtifacts: [definition.testFileName]
+          }
+        ]
+      },
+      {
+        id: "maintainability-and-portability",
+        components: [
+          {
+            kind: "implemented",
+            behaviors: [
+              "adapter-registry",
+              "provider-neutral-domain",
+              "registered-provider-templates"
+            ],
+            acceptanceArtifacts: [
+              definition.testFileName,
+              ...providerArtifacts.filter((path) => path.includes("test"))
+            ]
+          },
+          {
+            kind: "integration-port",
+            contract: "ModelAdapter, SecretResolver, and optional ResponsesTransport",
+            templateArtifacts: [definition.fileName, ...providerArtifacts],
+            acceptanceArtifacts: [
+              definition.testFileName,
+              ...providerArtifacts.filter((path) => path.includes("test"))
+            ]
+          }
+        ]
+      },
+      {
+        id: "cost-and-performance",
+        components: [
+          {
+            kind: "implemented",
+            behaviors: [
+              "token-and-cost-budgets",
+              "bounded-batching",
+              "concurrency-limits",
+              "cache-lifecycle"
+            ],
+            acceptanceArtifacts: runtimeAcceptance
+          },
+          {
+            kind: "integration-port",
+            contract: "CachePort",
+            templateArtifacts: [definition.fileName],
+            acceptanceArtifacts: runtimeAcceptance
+          }
+        ]
+      }
+    ]
+  };
+  return `${JSON.stringify(manifest, undefined, 2)}\n`;
 }
 
 export function createRuntimeTemplate(
@@ -160,6 +333,10 @@ export function createRuntimeTemplate(
         artifact(definition.fileName, definition.source),
         artifact(definition.testFileName, definition.testSource),
         artifact("policy.json", policyJson(resolveRuntimePolicy(runtime.profile))),
+        artifact(
+          "capabilities.json",
+          capabilityManifest(definition, modules, integrations, providers)
+        ),
         artifact(
           "README.md",
           readme(definition, modules, integrations, providers, selectedTargets)

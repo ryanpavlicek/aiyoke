@@ -64,6 +64,11 @@ concurrency, provider/scorer failure states, report delivery, baseline compariso
 and human feedback. External approval, telemetry, report storage, and feedback
 systems connect through generated ports and native fake-backed contract tests.
 
+Generated `capabilities.json` files enumerate all seven production families and
+distinguish executable first-party behavior from endpoint/adapter/integration-port
+delivery. Port-backed entries identify both their generated templates and native
+acceptance artifacts; prose-only or placeholder support is not included.
+
 Selecting OpenRouter or the xAI API emits registered Responses API adapters and
 native mock tests in all five languages. TypeScript, JavaScript, Python, and Go
 ship an HTTP implementation; Rust ships the stable transport port and adapter

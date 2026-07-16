@@ -23,6 +23,12 @@ generated setup template. Stubs, TODOs, and prose-only recommendations do not
 qualify as support. Services Aiyoke should not operate itself, such as a hosted
 trace store or moderation backend, use the second form.
 
+Each language output includes `capabilities.json`. Its seven discriminated family
+entries list implemented behaviors separately from integration-port components,
+including the contract name, generated template artifacts, and native acceptance
+artifacts. This is the machine-readable support boundary used by compatibility
+tests and available to downstream tooling.
+
 ### Delivery boundary
 
 | Capability | Generated first-party behavior | External integration boundary |
