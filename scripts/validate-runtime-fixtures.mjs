@@ -34,7 +34,14 @@ try {
   });
   await engine.apply();
 
-  run(process.execPath, ["--check", join(root, "aiyoke-runtime", "javascript", "runtime.js")]);
+  const javaScriptDirectory = join(root, "aiyoke-runtime", "javascript");
+  const typeScriptDirectory = join(root, "aiyoke-runtime", "typescript");
+  const pythonDirectory = join(root, "aiyoke-runtime", "python");
+  const goDirectory = join(root, "aiyoke-runtime", "go");
+  const rustDirectory = join(root, "aiyoke-runtime", "rust");
+
+  run(process.execPath, ["--check", join(javaScriptDirectory, "runtime.js")]);
+  run(process.execPath, ["--test", join(javaScriptDirectory, "runtime.test.js")]);
   run(process.execPath, [
     resolve("node_modules", "typescript", "bin", "tsc"),
     "--ignoreConfig",
@@ -46,28 +53,37 @@ try {
     "--moduleResolution",
     "NodeNext",
     "--skipLibCheck",
-    join(root, "aiyoke-runtime", "typescript", "runtime.ts")
+    join(typeScriptDirectory, "runtime.ts"),
+    join(typeScriptDirectory, "runtime.test.ts")
   ]);
-  run(process.platform === "win32" ? "python" : "python3", [
+  run(process.execPath, [
+    resolve("node_modules", "tsx", "dist", "cli.mjs"),
+    "--test",
+    join(typeScriptDirectory, "runtime.test.ts")
+  ]);
+  const python = process.platform === "win32" ? "python" : "python3";
+  run(python, [
     "-m",
     "py_compile",
-    join(root, "aiyoke-runtime", "python", "runtime.py")
+    join(pythonDirectory, "runtime.py"),
+    join(pythonDirectory, "test_runtime.py")
   ]);
-  run("go", ["test", join(root, "aiyoke-runtime", "go", "runtime.go")]);
-  run("gofmt", ["-d", join(root, "aiyoke-runtime", "go", "runtime.go")], {
+  run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_runtime.py"]);
+  run("go", ["test", join(goDirectory, "runtime.go"), join(goDirectory, "runtime_test.go")]);
+  run("gofmt", ["-d", join(goDirectory, "runtime.go"), join(goDirectory, "runtime_test.go")], {
     requireEmptyStdout: true
   });
   run("rustc", [
     "--edition",
     "2021",
-    "--crate-type",
-    "lib",
+    "--test",
     "--out-dir",
-    join(root, "aiyoke-runtime", "rust"),
-    join(root, "aiyoke-runtime", "rust", "runtime.rs")
+    rustDirectory,
+    join(rustDirectory, "runtime_test.rs")
   ]);
+  run(join(rustDirectory, process.platform === "win32" ? "runtime_test.exe" : "runtime_test"), []);
 
-  process.stdout.write("All generated runtime templates passed their native toolchains.\n");
+  process.stdout.write("All generated runtime templates passed their native conformance suites.\n");
 } catch (error) {
   process.stderr.write(`Preserved failed runtime fixture at ${root}.\n`);
   throw error;

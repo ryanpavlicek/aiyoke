@@ -129,12 +129,49 @@ export class CircuitBreaker {
 }
 `;
 
+const TEST_SOURCE = `import assert from "node:assert/strict";
+import test from "node:test";
+import { CircuitBreaker, enforceBudget, retryDelayMs, type ModelRequest } from "./runtime.js";
+
+const request: ModelRequest = {
+  id: "request-1",
+  route: "primary",
+  promptVersion: "v1",
+  input: {},
+  maxOutputTokens: 100,
+  metadata: {}
+};
+
+test("bounded retry delay is deterministic with injected randomness", () => {
+  assert.equal(retryDelayMs(2, 100, 1_000, 0.5, () => 0), 200);
+  assert.throws(() => retryDelayMs(0, 100, 1_000, 0, () => 0));
+});
+
+test("token budgets fail closed", () => {
+  assert.equal(enforceBudget(request, 10, 10, 100), undefined);
+  assert.equal(enforceBudget(request, 11, 10, 100)?.kind, "budget-exhausted");
+});
+
+test("circuit breaker opens, half-opens, and resets", () => {
+  const breaker = new CircuitBreaker(2, 100);
+  breaker.failure(0);
+  assert.equal(breaker.allow(1), true);
+  breaker.failure(2);
+  assert.equal(breaker.allow(50), false);
+  assert.equal(breaker.allow(102), true);
+  breaker.success();
+  assert.equal(breaker.allow(103), true);
+});
+`;
+
 export const typescriptRuntime = createRuntimeTemplate({
   id: "typescript-runtime",
   language: "typescript",
   displayName: "TypeScript",
   fileName: "runtime.ts",
-  source: SOURCE
+  source: SOURCE,
+  testFileName: "runtime.test.ts",
+  testSource: TEST_SOURCE
 });
 
 export function createTypeScriptRuntimeLoader() {

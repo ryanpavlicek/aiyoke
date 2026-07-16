@@ -160,12 +160,69 @@ impl CircuitBreaker {
 }
 `;
 
+const TEST_SOURCE = `#[path = "runtime.rs"]
+mod runtime;
+
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
+use runtime::{
+    enforce_budget, retry_delay, CircuitBreaker, FailureKind, ModelRequest,
+};
+
+#[test]
+fn bounded_retry_delay_is_deterministic() {
+    assert_eq!(
+        retry_delay(
+            2,
+            Duration::from_millis(100),
+            Duration::from_secs(1),
+            0.5,
+            0.0,
+        ),
+        Ok(Duration::from_millis(200))
+    );
+    assert!(retry_delay(0, Duration::ZERO, Duration::ZERO, 0.0, 0.0).is_err());
+}
+
+#[test]
+fn token_budget_fails_closed() {
+    let request = ModelRequest {
+        id: "request-1".to_owned(),
+        route: "primary".to_owned(),
+        prompt_version: "v1".to_owned(),
+        input: (),
+        max_output_tokens: 100,
+        metadata: BTreeMap::new(),
+    };
+    assert!(enforce_budget(&request, 10, 10, 100).is_none());
+    assert_eq!(
+        enforce_budget(&request, 11, 10, 100).map(|failure| failure.kind),
+        Some(FailureKind::BudgetExhausted)
+    );
+}
+
+#[test]
+fn circuit_opens_half_opens_and_closes() {
+    let start = Instant::now();
+    let mut breaker = CircuitBreaker::new(2, Duration::from_millis(100)).unwrap();
+    breaker.failure(start);
+    assert!(breaker.allow(start + Duration::from_millis(1)));
+    breaker.failure(start + Duration::from_millis(2));
+    assert!(!breaker.allow(start + Duration::from_millis(50)));
+    assert!(breaker.allow(start + Duration::from_millis(102)));
+    breaker.success();
+    assert!(breaker.allow(start + Duration::from_millis(103)));
+}
+`;
+
 export const rustRuntime = createRuntimeTemplate({
   id: "rust-runtime",
   language: "rust",
   displayName: "Rust",
   fileName: "runtime.rs",
-  source: SOURCE
+  source: SOURCE,
+  testFileName: "runtime_test.rs",
+  testSource: TEST_SOURCE
 });
 
 export function createRustRuntimeLoader() {

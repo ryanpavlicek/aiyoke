@@ -13,6 +13,14 @@ const fileNames = new Map([
   ["rust", "runtime.rs"]
 ]);
 
+const testFileNames = new Map([
+  ["typescript", "runtime.test.ts"],
+  ["javascript", "runtime.test.js"],
+  ["python", "test_runtime.py"],
+  ["go", "runtime_test.go"],
+  ["rust", "runtime_test.rs"]
+]);
+
 const workspace = {
   root: "/workspace",
   files: [] as readonly string[],
@@ -69,8 +77,10 @@ describe("runtime template extensions", () => {
         scope: { kind: "project", stack: spec.composition.stack }
       });
       const expectedFile = fileNames.get(language);
+      const expectedTestFile = testFileNames.get(language);
       expect(artifacts.map((artifact) => artifact.path)).toEqual([
         `aiyoke-runtime/${language}/${expectedFile}`,
+        `aiyoke-runtime/${language}/${expectedTestFile}`,
         `aiyoke-runtime/${language}/policy.json`,
         `aiyoke-runtime/${language}/README.md`
       ]);

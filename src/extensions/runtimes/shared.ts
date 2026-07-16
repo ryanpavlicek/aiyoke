@@ -18,6 +18,8 @@ export interface RuntimeTemplateDefinition {
   readonly displayName: string;
   readonly fileName: string;
   readonly source: string;
+  readonly testFileName: string;
+  readonly testSource: string;
 }
 
 function readme(definition: RuntimeTemplateDefinition): string {
@@ -30,6 +32,10 @@ The runtime source defines typed request/failure state, provider and integration
 ports, bounded retry timing, token/cost budget checks, and a circuit-breaker state
 machine. Register application-specific provider, telemetry, cache, evaluation,
 guard, and approval adapters at the application boundary.
+
+The generated ${definition.testFileName} is a native conformance starting point.
+Keep it running as the runtime is integrated and extend it with provider failure,
+timeout, malformed-output, cancellation, and concurrency cases.
 
 Do not place credentials in this directory. Provider adapters must read secrets
 from the environment or the consuming application's secret manager.
@@ -80,6 +86,7 @@ export function createRuntimeTemplate(
       });
       return [
         artifact(definition.fileName, definition.source),
+        artifact(definition.testFileName, definition.testSource),
         artifact("policy.json", policyJson(resolveRuntimePolicy(runtime.profile))),
         artifact("README.md", readme(definition))
       ];

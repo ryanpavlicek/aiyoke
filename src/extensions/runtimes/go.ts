@@ -157,12 +157,65 @@ func (breaker *CircuitBreaker) Failure(now time.Time) {
 }
 `;
 
+const TEST_SOURCE = `package aiyokeruntime
+
+import (
+	"testing"
+	"time"
+)
+
+func TestRetryDelay(t *testing.T) {
+	delay, err := RetryDelay(2, 100*time.Millisecond, time.Second, 0.5, 0)
+	if err != nil || delay != 200*time.Millisecond {
+		t.Fatalf("unexpected delay %v, error %v", delay, err)
+	}
+	if _, err := RetryDelay(0, time.Millisecond, time.Second, 0, 0); err == nil {
+		t.Fatal("zero attempt must fail")
+	}
+}
+
+func TestBudget(t *testing.T) {
+	request := ModelRequest{MaxOutputTokens: 100}
+	if failure := EnforceBudget(request, 10, 10, 100); failure != nil {
+		t.Fatalf("valid budget rejected: %+v", failure)
+	}
+	if failure := EnforceBudget(request, 11, 10, 100); failure == nil || failure.Kind != FailureBudgetExhausted {
+		t.Fatalf("budget must fail closed: %+v", failure)
+	}
+}
+
+func TestCircuitTransitions(t *testing.T) {
+	breaker, err := NewCircuitBreaker(2, 100*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	breaker.Failure(start)
+	if !breaker.Allow(start.Add(time.Millisecond)) {
+		t.Fatal("circuit opened too early")
+	}
+	breaker.Failure(start.Add(2 * time.Millisecond))
+	if breaker.Allow(start.Add(50 * time.Millisecond)) {
+		t.Fatal("open circuit allowed request")
+	}
+	if !breaker.Allow(start.Add(102 * time.Millisecond)) {
+		t.Fatal("circuit did not half-open")
+	}
+	breaker.Success()
+	if !breaker.Allow(start.Add(103 * time.Millisecond)) {
+		t.Fatal("successful circuit did not close")
+	}
+}
+`;
+
 export const goRuntime = createRuntimeTemplate({
   id: "go-runtime",
   language: "go",
   displayName: "Go",
   fileName: "runtime.go",
-  source: SOURCE
+  source: SOURCE,
+  testFileName: "runtime_test.go",
+  testSource: TEST_SOURCE
 });
 
 export function createGoRuntimeLoader() {

@@ -137,12 +137,57 @@ class CircuitBreaker:
             self._opened_at = current
 `;
 
+const TEST_SOURCE = `import unittest
+
+from runtime import (
+    CircuitBreaker,
+    CircuitState,
+    FailureKind,
+    ModelRequest,
+    enforce_budget,
+    retry_delay_ms,
+)
+
+
+class RuntimePrimitivesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.request = ModelRequest("request-1", "primary", "v1", {}, 100, {})
+
+    def test_retry_delay_is_bounded_and_deterministic(self) -> None:
+        self.assertEqual(retry_delay_ms(2, 100, 1_000, 0.5, lambda: 0), 200)
+        with self.assertRaises(ValueError):
+            retry_delay_ms(0, 100, 1_000, 0, lambda: 0)
+
+    def test_token_budget_fails_closed(self) -> None:
+        self.assertIsNone(enforce_budget(self.request, 10, 10, 100))
+        failure = enforce_budget(self.request, 11, 10, 100)
+        self.assertIsNotNone(failure)
+        self.assertEqual(failure.kind, FailureKind.BUDGET_EXHAUSTED)
+
+    def test_circuit_transitions(self) -> None:
+        breaker = CircuitBreaker(2, 0.1)
+        breaker.failure(0.0)
+        self.assertTrue(breaker.allow(0.01))
+        breaker.failure(0.02)
+        self.assertFalse(breaker.allow(0.05))
+        self.assertTrue(breaker.allow(0.121))
+        self.assertEqual(breaker.state(0.121), CircuitState.HALF_OPEN)
+        breaker.success()
+        self.assertTrue(breaker.allow(0.13))
+
+
+if __name__ == "__main__":
+    unittest.main()
+`;
+
 export const pythonRuntime = createRuntimeTemplate({
   id: "python-runtime",
   language: "python",
   displayName: "Python",
   fileName: "runtime.py",
-  source: SOURCE
+  source: SOURCE,
+  testFileName: "test_runtime.py",
+  testSource: TEST_SOURCE
 });
 
 export function createPythonRuntimeLoader() {
