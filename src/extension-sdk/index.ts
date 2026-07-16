@@ -43,6 +43,16 @@ export {
 } from "./isolation.js";
 export { ExtensionRegistry } from "./registry.js";
 export {
+  type ImplementedCapabilityComponent,
+  type IntegrationPortCapabilityComponent,
+  RUNTIME_CAPABILITY_FAMILY_IDS,
+  type RuntimeCapabilityFamily,
+  type RuntimeCapabilityFamilyId,
+  type RuntimeCapabilityManifest,
+  type RuntimeCapabilityValidationContext,
+  validateRuntimeCapabilityManifest
+} from "./runtime-capability.js";
+export {
   type ExtensionConsent,
   type ExtensionTrustRoot,
   type ExtensionTrustStore,

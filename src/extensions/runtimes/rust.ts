@@ -1249,9 +1249,7 @@ impl ModelAdapter<(), String> for SlowAdapter {
 #[test]
 fn deadline_and_caller_cancellation_remain_distinct() {
     let mut adapters = AdapterRegistry::new();
-    adapters
-        .register("primary", Arc::new(SlowAdapter))
-        .unwrap();
+    adapters.register("primary", Arc::new(SlowAdapter)).unwrap();
     let mut options = test_options();
     options.timeout = Duration::from_millis(1);
     options.retry.max_attempts = 1;

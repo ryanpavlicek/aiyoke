@@ -85,6 +85,9 @@ All notable changes to this project are documented here. The project follows
   plus exact template and native acceptance artifact references.
 - Native deadline-versus-caller-cancellation adversarial cases for every runtime;
   timeouts remain retryable and cancellation remains terminal and distinguishable.
+- A closed seven-family capability-matrix gate that rejects missing delivery
+  variants, unsafe/dangling templates, TODO-backed ports, and acceptance artifacts
+  that are not executed by the native runtime job.
 
 ## 0.1.0 — 2026-07-16
 

@@ -60,6 +60,13 @@ The SDK exports versioned extension descriptors/contracts, `defineTarget`,
 `defineLanguage`, `defineFramework`, `definePack`, `defineRuntime`,
 `ExtensionRegistry`, and `runExtensionCompatibility`.
 
+Runtime ecosystem tooling can use `validateRuntimeCapabilityManifest()` and
+`RUNTIME_CAPABILITY_FAMILY_IDS` from this subpath. The validator enforces the
+versioned seven-family discriminated model, canonical artifact paths, composed
+implemented/integration-port delivery, and an explicit set of acceptance
+artifacts the caller will execute. It is intentionally not re-exported by the
+lightweight root facade.
+
 Signed-extension contracts include manifest parsing/signing payload generation,
 trust/revocation/consent unions, verification results, and isolation options.
 Cryptography is represented by `ManifestCryptoPort`; the Node implementation

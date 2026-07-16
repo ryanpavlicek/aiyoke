@@ -9,6 +9,7 @@ import {
   EXTENSION_API_VERSION,
   type ExtensionDescriptor,
   type ExtensionLoader,
+  type RuntimeCapabilityManifest,
   type RuntimeTemplateExtension
 } from "../../extension-sdk/index.js";
 
@@ -278,7 +279,7 @@ function capabilityManifest(
         ]
       }
     ]
-  };
+  } satisfies RuntimeCapabilityManifest;
   return `${JSON.stringify(manifest, undefined, 2)}\n`;
 }
 

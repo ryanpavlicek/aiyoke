@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { extensionId } from "../dist/core/index.js";
 import { AiyokeEngine } from "../dist/engine/index.js";
+import { validateRuntimeCapabilityManifest } from "../dist/extension-sdk/index.js";
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -24,6 +25,76 @@ function run(command, args, options = {}) {
   }
 }
 
+const executedAcceptanceArtifacts = new Map([
+  [
+    "typescript",
+    new Set([
+      "runtime.test.ts",
+      "modules/tooling.test.ts",
+      "modules/evaluation.test.ts",
+      "providers/responses.test.ts"
+    ])
+  ],
+  [
+    "javascript",
+    new Set([
+      "runtime.test.js",
+      "modules/tooling.test.js",
+      "modules/evaluation.test.js",
+      "providers/responses.test.js"
+    ])
+  ],
+  [
+    "python",
+    new Set([
+      "test_runtime.py",
+      "modules/test_tooling.py",
+      "modules/test_evaluation.py",
+      "providers/test_responses.py"
+    ])
+  ],
+  [
+    "go",
+    new Set([
+      "runtime_test.go",
+      "tooling_test.go",
+      "evaluation_test.go",
+      "responses_provider_test.go"
+    ])
+  ],
+  [
+    "rust",
+    new Set([
+      "runtime_test.rs",
+      "tooling_test.rs",
+      "evaluation_test.rs",
+      "responses_provider_test.rs"
+    ])
+  ]
+]);
+
+async function validateCapabilityMatrix(directory, language) {
+  const executed = executedAcceptanceArtifacts.get(language);
+  if (executed === undefined) throw new Error(`${language} acceptance execution set is missing.`);
+  const manifest = validateRuntimeCapabilityManifest(
+    JSON.parse(await readFile(join(directory, "capabilities.json"), "utf8")),
+    { language, executedAcceptanceArtifacts: executed }
+  );
+  for (const family of manifest.families) {
+    for (const component of family.components) {
+      for (const artifact of component.acceptanceArtifacts) {
+        await readFile(join(directory, artifact), "utf8");
+      }
+    }
+    for (const artifact of family.components[1].templateArtifacts) {
+      const source = await readFile(join(directory, artifact), "utf8");
+      if (/\bTODO\b/i.test(source)) {
+        throw new Error(`${language} ${family.id} template ${artifact} contains a TODO.`);
+      }
+    }
+  }
+}
+
 const root = await mkdtemp(join(tmpdir(), "aiyoke-runtime-validation-"));
 try {
   const engine = await AiyokeEngine.open(root);
@@ -39,6 +110,14 @@ try {
   const pythonDirectory = join(root, "aiyoke-runtime", "python");
   const goDirectory = join(root, "aiyoke-runtime", "go");
   const rustDirectory = join(root, "aiyoke-runtime", "rust");
+
+  await Promise.all([
+    validateCapabilityMatrix(typeScriptDirectory, "typescript"),
+    validateCapabilityMatrix(javaScriptDirectory, "javascript"),
+    validateCapabilityMatrix(pythonDirectory, "python"),
+    validateCapabilityMatrix(goDirectory, "go"),
+    validateCapabilityMatrix(rustDirectory, "rust")
+  ]);
 
   run(process.execPath, ["--check", join(javaScriptDirectory, "runtime.js")]);
   run(process.execPath, ["--check", join(javaScriptDirectory, "modules", "tooling.js")]);

@@ -250,6 +250,12 @@ fixtures validate detection confidence; target and runtime fixtures validate
 their render contracts. Findings redact configured canaries even when a hostile
 loader includes one in an exception.
 
+Runtime extensions that emit `capabilities.json` can validate the manifest with
+`validateRuntimeCapabilityManifest()` from `aiyoke/extension-sdk`. Pass the exact
+acceptance artifact set your CI executes; the validator rejects any claim that
+references a different or unsafe path. A port-backed claim must name its contract
+and include at least one generated template plus an executed acceptance artifact.
+
 Declare required extensions in `descriptor.requires`, and mutually exclusive
 extensions in `descriptor.conflicts`. Do not reach into another extension's
 private files to call it. The registry resolves requirements in deterministic

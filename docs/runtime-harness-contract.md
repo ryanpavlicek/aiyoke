@@ -116,6 +116,12 @@ fixtures. Python, Rust, and Go have their own generated runtime modules. Each
 language fixture must run its native formatter, compiler or type checker, unit
 tests, and an adversarial conformance suite in CI.
 
+The native fixture gate also validates each generated `capabilities.json` as a
+closed acceptance matrix. It requires exactly these seven families, both composed
+delivery variants, nonempty behavior and port contracts, safe existing template
+paths without TODOs, and acceptance paths that are actually executed later in the
+same native job. Dangling or documentation-only claims fail before compilation.
+
 All languages generate separate stable runtime, tooling, evaluation, framework,
 and provider modules. Dependencies flow downward: framework/provider/evaluation/
 tooling modules import or compose the stable runtime contract; `runtime` never
