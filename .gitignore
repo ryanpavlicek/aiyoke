@@ -8,4 +8,4 @@ coverage/
 !.env.example
 .aiyoke/cache/
 .aiyoke/tmp/
-
+/AGENTS.md
