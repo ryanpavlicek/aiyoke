@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The project follows
 
 ## Unreleased
 
+### Fixed
+
+- Retry post-publish npm registry verification so normal propagation delay does
+  not prevent creation of the already-published version's GitHub release.
+
 ## 0.3.1 — 2026-07-16
 
 ### Fixed
