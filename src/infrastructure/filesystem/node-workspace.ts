@@ -76,22 +76,25 @@ export class NodeWorkspace implements WorkspacePort {
     const target = await this.#safeTarget(path);
     let handle: Awaited<ReturnType<typeof open>> | undefined;
     try {
+      await this.options.onReadCheckpoint?.("target-verified", { path, target });
+      const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+      handle = await open(target, constants.O_RDONLY | noFollow);
+      const openedMetadata = await handle.stat();
       const initialMetadata = await lstat(target);
-      if (initialMetadata.isSymbolicLink() || !initialMetadata.isFile()) {
+      await this.#verifiedDirectory(dirname(target), path);
+      if (
+        !openedMetadata.isFile() ||
+        initialMetadata.isSymbolicLink() ||
+        !initialMetadata.isFile() ||
+        !sameFile(openedMetadata, initialMetadata)
+      ) {
         throw new AiyokeError("INVALID_PATH", `Refusing to read non-regular file ${path}.`, {
           path
         });
       }
-      await this.options.onReadCheckpoint?.("target-verified", { path, target });
-      const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
-      handle = await open(target, constants.O_RDONLY | noFollow);
-      const [openedMetadata, currentMetadata] = await Promise.all([
-        handle.stat(),
-        lstat(target),
-        this.#verifiedDirectory(dirname(target), path)
-      ]);
+      const currentMetadata = await lstat(target);
+      await this.#verifiedDirectory(dirname(target), path);
       if (
-        !openedMetadata.isFile() ||
         currentMetadata.isSymbolicLink() ||
         !currentMetadata.isFile() ||
         !sameFile(openedMetadata, currentMetadata)
