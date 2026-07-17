@@ -22,12 +22,16 @@ The root entry point is the normal application API.
 interface CreateAiyokeOptions {
   readonly root?: string;
   readonly extensions?: readonly ExtensionLoader[];
+  readonly initPresets?: readonly InitPreset[];
 }
 
 function createAiyoke(options?: CreateAiyokeOptions): Promise<AiyokeEngine>;
 ```
 
-`root` defaults to `process.cwd()`. The function dynamically imports the engine,
+`root` defaults to `process.cwd()`. `initPresets` adds application-owned
+initialization presets through a registry; the preset contracts are owned by
+`aiyoke/extension-sdk` and do not alter the dependency-free core schema.
+The function dynamically imports the engine,
 opens/canonicalizes the workspace, composes first-party loaders, and registers
 application-owned loaders before freezing resolution. It does not read a
 provider credential or generate files merely by opening.
@@ -52,7 +56,8 @@ exported as an eagerly loaded root value.
 | Member | Contract |
 | --- | --- |
 | `root: string` | Canonical absolute workspace root. |
-| `listExtensions()` | Deterministically sorted registered descriptors. |
+| `listExtensions()` | Deterministically sorted registered extension descriptors. |
+| `listInitPresets()` | Deterministically sorted preset IDs and display metadata. |
 | `detect()` | Positive language/framework detections sorted by confidence then ID. |
 | `initialize(options?)` | Create `aiyoke.yaml`; preserve an existing file unless `force` is true. |
 | `loadSpec()` | Parse and validate the current schema-v3 canonical source. |
@@ -64,8 +69,10 @@ exported as an eagerly loaded root value.
 | `check()` | Return target, lock, ownership, and drift findings. |
 | `doctor()` | Return `check()` findings plus missing-selection readiness diagnostics. |
 
-Initialization options are optional `languages`, `frameworks`, `targetAdapters`,
-and `force`. Selection arrays contain branded `ExtensionId` values. The result is
+Initialization options are optional `preset`, `languages`, `frameworks`,
+`targetAdapters`, and `force`. `preset` selects a registered application-layer
+recipe; explicit selection arrays override that recipe's corresponding values.
+Selection arrays and `preset` contain branded `ExtensionId` values. The result is
 `{ path: "aiyoke.yaml", created, spec }`.
 
 Configuration options are optional `name`, `architecture`, `languages`,
@@ -76,6 +83,30 @@ Configuration options are optional `name`, `architecture`, `languages`,
 Migration options are optional `targetVersion`, `allowDowngrade`, and `dryRun`.
 Migration/rollback results contain `operation`, `fromVersion`, `toVersion`,
 `changed`, `dryRun`, applied steps, optional `backupPath`, and canonical `output`.
+
+### `getBuiltinDiagnosticCatalog()`
+
+```ts
+function getBuiltinDiagnosticCatalog(): Promise<readonly BuiltinDiagnosticDefinition[]>;
+```
+
+Loads the machine-readable built-in error/finding catalog through the lazy
+facade. The result is a deterministically ordered, frozen array of readonly
+entries for safe display or CI policy checks; it performs no workspace, network,
+or provider I/O. The
+catalog's `summary`, `remediation`, `channel`, and (for findings) default
+`severity` are the structured counterpart to [Errors and findings](errors-and-findings.md).
+
+### Initialization presets
+
+`InitPreset`, `InitPresetContext`, and `InitPresetSelection` are extension-SDK
+contracts for the optional application-layer shortcut used by `aiyoke init
+--preset`. A preset is a named, registered selection recipe that returns
+optional language, framework, and target adapter IDs; it does not create a second
+configuration format or bypass schema validation. The built-in `simple` preset
+selects Claude Code + OpenRouter while language/framework selection remains
+detection-driven. Hosts can add a preset through
+`CreateAiyokeOptions.initPresets` without changing core logic.
 
 ### `discoverSignedExtension(options)`
 
@@ -164,9 +195,12 @@ The facade re-exports these runtime values without loading the engine:
 | `ExtensionRegistry` | Deterministic loader registration/resolution. |
 | `runExtensionCompatibility` | Standalone public compatibility suite. |
 
-Root-exported domain types are `ArtifactIntent`, `HarnessModule`, `HarnessPlan`,
-`HarnessSpec`, `MonorepoWorkspace`, `PlanOperation`, `ProjectComposition`,
-`RuntimeHarnessSpec`, `RuntimePolicy`, `TargetSpec`, and `VerificationFinding`.
+Root-re-exported domain and SDK contract types are `ArtifactIntent`,
+`HarnessModule`, `HarnessPlan`, `BuiltinDiagnosticDefinition`, `HarnessSpec`,
+`InitPreset`, `InitPresetContext`, `InitPresetSelection`, `MonorepoWorkspace`,
+`PlanOperation`, `ProjectComposition`, `RuntimeHarnessSpec`, `RuntimePolicy`,
+`TargetSpec`, and `VerificationFinding`. `InitPreset*` types are owned by the
+`aiyoke/extension-sdk` entry point even though the root facade re-exports them.
 
 Root-exported extension types are `AiyokeExtension`, `CapabilityPackExtension`,
 `CompatibilityFixture`, `CompatibilityReport`, `CompatibilityRunOptions`,
@@ -192,12 +226,17 @@ dependency.
 | `safeRelativePath(value)` | Normalize separators and reject unsafe/cross-platform-invalid paths. |
 | `canonicalJson(value)` | Serialize finite acyclic JSON with code-point-sorted object keys. |
 | `compareCodePoints(left, right)` | Locale-independent Unicode code-point comparator. |
+| `AIYOKE_ERROR_CODES` | Ordered runtime tuple of built-in `AiyokeErrorCode` values for tooling. |
 | `JsonPrimitive`, `JsonValue`, `JsonObject` | Read-only JSON domain types. |
+| `BuiltinDiagnosticBase`, `BuiltinDiagnosticDefinition` | Stable summary/remediation metadata for diagnostics emitted by Aiyoke itself. |
+| `BuiltinErrorDiagnostic`, `BuiltinFindingDiagnostic` | Discriminated diagnostic metadata for the error and finding channels. |
 
-### Errors
+### Errors and findings
 
 `AiyokeError` extends `Error` with `code: AiyokeErrorCode` and bounded JSON
-`details`. Stable codes are:
+`details`. The complete error, verification-finding, and compatibility-kit code
+catalog with remediation is in [Errors and findings](errors-and-findings.md).
+Stable `AiyokeErrorCode` values are:
 
 ```text
 INVALID_SPEC, INVALID_PATH, EXTENSION_DUPLICATE, EXTENSION_MISSING,
@@ -207,6 +246,12 @@ VALIDATION_FAILED
 ```
 
 Callers should branch on `code`, not message text.
+`AIYOKE_ERROR_CODES` is the ordered runtime tuple for tooling that wants to
+validate or display the built-in error set without duplicating string literals.
+The CLI's JSON envelope may additionally use the transport-only `UNEXPECTED`
+code when an exception falls outside `AiyokeError`; library callers should
+handle the original exception instead. See [Errors and findings](errors-and-findings.md)
+for the complete remediation catalog.
 
 ### Configuration and runtime domain
 
@@ -232,6 +277,11 @@ Instruction/module types are `InstructionBlock`, `SkillDefinition`,
 `ManagedSectionMarkers`, `ArtifactIntent`, `PlanOperation`, `HarnessPlan`,
 `VerificationFinding`, and `HarnessLifecycle`.
 
+`VerificationFinding.code` is intentionally a string so third-party extensions
+can add namespaced diagnostics without modifying the core. Built-in values and
+the stability/remediation policy are cataloged in
+[Errors and findings](errors-and-findings.md#built-in-verification-findings).
+
 `aggregateHarnessStack(composition)` returns unique selections in stable first
 appearance order. It does not resolve registry dependencies.
 
@@ -249,7 +299,10 @@ requirements, conflicts, and runtime language ownership.
 
 The SDK exports `WorkspaceSnapshot`, `DetectionResult`, `ContributionContext`,
 `TargetRenderContext`, `TargetVerificationContext`, `RuntimeScope`, and
-`RuntimeRenderContext`. Extension variants are `LanguageExtension`,
+`RuntimeRenderContext`. Initialization-preset contracts are `InitPreset`,
+`InitPresetContext`, and `InitPresetSelection`; they belong to this SDK layer
+because presets compose application behavior without entering core. Extension
+variants are `LanguageExtension`,
 `FrameworkExtension`, `CapabilityPackExtension`, `TargetExtension`,
 `RuntimeTemplateExtension`, and their union `AiyokeExtension`.
 

@@ -19,6 +19,7 @@ interface CliOptions {
   readonly dryRun: boolean;
   readonly allowDowngrade: boolean;
   readonly interactive: boolean;
+  readonly preset?: string;
   readonly name?: string;
   readonly architecture?: ProjectArchitecture;
   readonly targetVersion?: number;
@@ -38,7 +39,7 @@ export interface CliRuntime {
 export const CLI_HELP = `aiyoke — deterministic AI harness compiler
 
 Usage:
-  aiyoke init [--languages python,typescript] [--frameworks fastapi] [--targets claude-code,codex] [--force]
+  aiyoke init [--preset simple] [--languages python,typescript] [--frameworks fastapi] [--targets claude-code,codex] [--force]
   aiyoke plan
   aiyoke apply
   aiyoke check
@@ -99,6 +100,7 @@ function parseArguments(args: readonly string[]): CliOptions {
   let dryRun = false;
   let allowDowngrade = false;
   let interactive = false;
+  let preset: string | undefined;
   let name: string | undefined;
   let selectedArchitecture: ProjectArchitecture | undefined;
   let targetVersion: number | undefined;
@@ -117,7 +119,10 @@ function parseArguments(args: readonly string[]): CliOptions {
     else if (argument === "--dry-run") dryRun = true;
     else if (argument === "--allow-downgrade") allowDowngrade = true;
     else if (argument === "--interactive") interactive = true;
-    else if (argument === "--root") {
+    else if (argument === "--preset") {
+      preset = optionValue(args, index, "--preset requires a registered initialization preset.");
+      index += 1;
+    } else if (argument === "--root") {
       const value = optionValue(args, index, "--root requires a path.");
       root = value;
       index += 1;
@@ -166,7 +171,7 @@ function parseArguments(args: readonly string[]): CliOptions {
   const common = ["--root", "--json", "--help"];
   const commandOptions: Readonly<Record<string, readonly string[]>> = {
     help: common,
-    init: [...common, "--force", "--languages", "--frameworks", "--targets"],
+    init: [...common, "--force", "--preset", "--languages", "--frameworks", "--targets"],
     plan: common,
     apply: common,
     check: common,
@@ -204,7 +209,8 @@ function parseArguments(args: readonly string[]): CliOptions {
     ...(name === undefined ? {} : { name }),
     ...(selectedArchitecture === undefined ? {} : { architecture: selectedArchitecture }),
     ...(targetVersion === undefined ? {} : { targetVersion }),
-    ...(backup === undefined ? {} : { backup })
+    ...(backup === undefined ? {} : { backup }),
+    ...(preset === undefined ? {} : { preset })
   };
   return { command, root, json, force, dryRun, allowDowngrade, interactive, ...optional };
 }
@@ -279,6 +285,7 @@ export async function runCli(
     if (options.command === "init") {
       const result = await engine.initialize({
         force: options.force,
+        ...(options.preset === undefined ? {} : { preset: extensionId(options.preset) }),
         ...(options.languages === undefined
           ? {}
           : { languages: options.languages.map(extensionId) }),

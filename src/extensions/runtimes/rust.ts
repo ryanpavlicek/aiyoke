@@ -1282,6 +1282,131 @@ fn deadline_and_caller_cancellation_remain_distinct() {
     ));
 }
 
+#[derive(Default)]
+struct PolicyPressureAdapter {
+    active: AtomicUsize,
+    maximum: AtomicUsize,
+    calls: AtomicUsize,
+}
+
+impl ModelAdapter<(), String> for PolicyPressureAdapter {
+    fn invoke(
+        &self,
+        _request: &ModelRequest<()>,
+        _context: &InvocationContext,
+    ) -> ModelResult<String> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut observed = self.maximum.load(Ordering::SeqCst);
+        while active > observed {
+            match self.maximum.compare_exchange(
+                observed,
+                active,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                Err(current) => observed = current,
+            }
+        }
+        thread::sleep(Duration::from_millis(1));
+        self.active.fetch_sub(1, Ordering::SeqCst);
+        ModelResult::Success {
+            value: "ok".to_owned(),
+            usage: Usage {
+                input_tokens: 1,
+                output_tokens: 1,
+                estimated_cost_usd: 0.001,
+            },
+        }
+    }
+}
+
+#[test]
+fn policy_pressure_is_bounded_and_cost_budget_fails_closed() {
+    let adapter = Arc::new(PolicyPressureAdapter::default());
+    let mut adapters = AdapterRegistry::new();
+    adapters.register("primary", adapter.clone()).unwrap();
+    let mut options = test_options();
+    options.max_concurrency = 4;
+    options.max_batch_size = 32;
+    options.retry.max_attempts = 1;
+    options.fallback_routes.clear();
+    let events = Arc::new(MemoryEvents::default());
+    let runtime = HarnessRuntime::new(
+        options.clone(),
+        adapters,
+        RuntimePorts {
+            events: Some(events.clone()),
+            ..RuntimePorts::default()
+        },
+    )
+    .unwrap();
+    let requests: Vec<_> = (0..32)
+        .map(|index| test_request(&format!("pressure-{index}")))
+        .collect();
+    let rounds = 8;
+    for _round in 0..rounds {
+        let results = runtime
+            .execute_batch(&requests, &ExecuteOptions::default())
+            .unwrap();
+        assert!(results
+            .iter()
+            .all(|result| matches!(result, ModelResult::Success { .. })));
+    }
+    let total_requests = requests.len() * rounds;
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), total_requests);
+    assert_eq!(
+        adapter.maximum.load(Ordering::SeqCst),
+        options.max_concurrency
+    );
+    let captured = events.events.lock().unwrap();
+    assert_eq!(
+        captured
+            .iter()
+            .filter(|event| matches!(event.kind, RuntimeEventKind::RequestStarted))
+            .count(),
+        total_requests
+    );
+    assert_eq!(
+        captured
+            .iter()
+            .filter(|event| matches!(event.kind, RuntimeEventKind::AttemptStarted { .. }))
+            .count(),
+        total_requests
+    );
+    assert_eq!(
+        captured
+            .iter()
+            .filter(|event| matches!(event.kind, RuntimeEventKind::RequestSucceeded { .. }))
+            .count(),
+        total_requests
+    );
+    assert!(!format!("{captured:?}").contains("secret-value"));
+    drop(captured);
+
+    let mut budget_options = options;
+    budget_options.max_estimated_cost_usd = Some(0.0001);
+    let mut budget_adapters = AdapterRegistry::new();
+    budget_adapters
+        .register("primary", Arc::new(FallbackAdapter))
+        .unwrap();
+    let budget_runtime =
+        HarnessRuntime::new(budget_options, budget_adapters, RuntimePorts::default()).unwrap();
+    let budget_results = budget_runtime
+        .execute_batch(&requests, &ExecuteOptions::default())
+        .unwrap();
+    assert!(budget_results.iter().all(|result| {
+        matches!(
+            result,
+            ModelResult::Failure(ModelFailure {
+                kind: FailureKind::BudgetExhausted,
+                ..
+            })
+        )
+    }));
+}
+
 struct RejectingGuard;
 
 impl InputGuard<()> for RejectingGuard {

@@ -845,6 +845,135 @@ class RuntimeFacadeTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(event["type"] == "cache-read-failed" for event in events))
         self.assertTrue(any(event["type"] == "cache-write-failed" for event in events))
 
+    async def test_deterministic_policy_pressure_stays_bounded_and_redacted(self) -> None:
+        active = 0
+        maximum_active = 0
+        calls = 0
+        events = []
+
+        class Adapter:
+            async def invoke(inner_self, request):
+                nonlocal active, maximum_active, calls
+                calls += 1
+                active += 1
+                maximum_active = max(maximum_active, active)
+                await asyncio.sleep(0)
+                active -= 1
+                return ModelSuccess("ok", Usage(1, 1, 0.001))
+
+        class Events:
+            async def emit(self, event):
+                events.append(event)
+
+        pressure_options = RuntimeOptions(
+            timeout_ms=1_000,
+            retry=RetryOptions(1, 1, 1, 0),
+            fallback_routes=[],
+            max_repair_attempts=0,
+            max_input_tokens=100,
+            max_output_tokens=100,
+            max_concurrency=4,
+            max_batch_size=32,
+            circuit_failure_threshold=2,
+            circuit_reset_after_seconds=1,
+        )
+        requests = [
+            ModelRequest(
+                f"pressure-{index}",
+                "primary",
+                "v1",
+                {},
+                10,
+                100,
+                {"tenant": "public", "apiKey": "secret-value"},
+            )
+            for index in range(32)
+        ]
+        runtime = HarnessRuntime(
+            pressure_options,
+            AdapterRegistry().register("primary", Adapter()),
+            events=Events(),
+        )
+        rounds = 8
+        results = []
+        for _round in range(rounds):
+            results.extend(await runtime.execute_batch(requests))
+        total_requests = len(requests) * rounds
+        self.assertEqual(len(results), total_requests)
+        self.assertTrue(all(isinstance(result, ModelSuccess) for result in results))
+        self.assertEqual(calls, total_requests)
+        self.assertEqual(maximum_active, 4)
+        self.assertEqual(
+            sum(event["type"] == "request-started" for event in events), total_requests
+        )
+        self.assertEqual(
+            sum(event["type"] == "attempt-started" for event in events), total_requests
+        )
+        self.assertEqual(
+            sum(event["type"] == "request-succeeded" for event in events), total_requests
+        )
+        self.assertNotIn("secret-value", repr(events))
+
+        class ExpensiveAdapter:
+            async def invoke(self, request):
+                return ModelSuccess("too-expensive", Usage(1, 1, 0.01))
+
+        budget_runtime = HarnessRuntime(
+            RuntimeOptions(
+                **{
+                    **pressure_options.__dict__,
+                    "max_estimated_cost_usd": 0.0001,
+                }
+            ),
+            AdapterRegistry().register("primary", ExpensiveAdapter()),
+        )
+        budget_results = await budget_runtime.execute_batch(requests)
+        self.assertTrue(
+            all(
+                isinstance(result, ModelFailure)
+                and result.kind is FailureKind.BUDGET_EXHAUSTED
+                for result in budget_results
+            )
+        )
+
+        now = [0.0]
+        failing_calls = 0
+
+        class FailingAdapter:
+            async def invoke(self, request):
+                nonlocal failing_calls
+                failing_calls += 1
+                return ModelFailure(FailureKind.RATE_LIMIT, "busy", True)
+
+        storm_options = RuntimeOptions(
+            **{
+                **pressure_options.__dict__,
+                "circuit_failure_threshold": 2,
+                "circuit_reset_after_seconds": 1,
+            }
+        )
+        storm_runtime = HarnessRuntime(
+            storm_options,
+            AdapterRegistry().register("primary", FailingAdapter()),
+            clock=lambda: now[0],
+            sleep=lambda _delay: asyncio.sleep(0),
+        )
+        first = await storm_runtime.execute(requests[0])
+        second = await storm_runtime.execute(requests[1])
+        third = await storm_runtime.execute(requests[2])
+        self.assertIsInstance(first, ModelFailure)
+        self.assertEqual(first.kind, FailureKind.RATE_LIMIT)
+        self.assertIsInstance(second, ModelFailure)
+        self.assertEqual(second.kind, FailureKind.RATE_LIMIT)
+        self.assertIsInstance(third, ModelFailure)
+        self.assertEqual(third.kind, FailureKind.CIRCUIT_OPEN)
+        self.assertEqual(failing_calls, 2)
+        now[0] = 1.0
+        half_open = await storm_runtime.execute(requests[3])
+        self.assertIsInstance(half_open, ModelFailure)
+        self.assertEqual(half_open.kind, FailureKind.RATE_LIMIT)
+        self.assertEqual(failing_calls, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

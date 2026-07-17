@@ -24,6 +24,7 @@ const requiredEntries = [
   "package/dist/index.js",
   "package/docs/architecture.md",
   "package/docs/README.md",
+  "package/docs/errors-and-findings.md",
   "package/docs/extensions.md",
   "package/examples/extensions/hello-target/aiyoke-extension.template.json",
   "package/examples/extensions/hello-target/package/index.mjs",
@@ -188,7 +189,7 @@ async function installSmoke(archivePath, installer) {
       [
         "--input-type=module",
         "--eval",
-        "const api=await import('aiyoke'); const sdk=await import('aiyoke/extension-sdk'); const core=await import('aiyoke/core'); if(typeof api.createAiyoke!=='function'||typeof sdk.runExtensionCompatibility!=='function'||typeof core.extensionId!=='function') process.exit(1);"
+        "const api=await import('aiyoke'); const sdk=await import('aiyoke/extension-sdk'); const core=await import('aiyoke/core'); const diagnostics=await api.getBuiltinDiagnosticCatalog(); if(typeof api.createAiyoke!=='function'||typeof api.getBuiltinDiagnosticCatalog!=='function'||typeof sdk.runExtensionCompatibility!=='function'||typeof core.extensionId!=='function'||!Object.isFrozen(diagnostics)||!Object.isFrozen(core.AIYOKE_ERROR_CODES)) process.exit(1);"
       ],
       { cwd: consumer }
     );

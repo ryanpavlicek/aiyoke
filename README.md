@@ -20,6 +20,47 @@ the core.
 > Where a first-party service is outside the project boundary, generated ports,
 > adapters, runnable fakes, and integration templates make that boundary explicit.
 
+## Why Aiyoke
+
+AI-assisted repositories tend to accumulate provider-specific instruction files,
+copy-pasted retry logic, and undocumented changes that are difficult to review or
+reproduce. Aiyoke gives that work one deterministic source of truth: review one
+`aiyoke.yaml`, preview the exact plan, and generate the native files and runtime
+ports your repository has selected.
+
+### A 60-second before/after
+
+Before, a small Next.js team may hand-maintain several disconnected files:
+
+```text
+.claude/CLAUDE.md       # repository instructions
+.openrouter/config.json # hand-edited provider routing
+src/ai/client.ts        # one-off retry and policy plumbing
+```
+
+After, the selections are reviewable in one file and reproducibly compiled:
+
+```sh
+npx aiyoke init --preset simple
+npx aiyoke plan   # read-only: inspect operations and fingerprint
+npx aiyoke apply  # atomic, owned writes
+npx aiyoke check  # drift and target verification
+```
+
+```text
+aiyoke.yaml            # canonical, committed source
+.aiyoke/lock.json      # content and plan evidence
+.claude/...            # generated native Claude Code files
+.openrouter/...        # generated provider configuration
+aiyoke-runtime/...     # optional runtime facade and integration ports
+```
+
+The preset detects the Next.js/TypeScript stack and selects Claude Code plus
+OpenRouter; explicit flags remain available for other combinations. The second
+unchanged `apply` produces zero writes. A changed generated file is
+reported as drift by `check` so the update can be reviewed before an intentional
+`apply`, and credentials remain environment-variable references.
+
 ## Status
 
 Version 0.3.3 is the current public hardening release. Its code, target,
@@ -78,6 +119,13 @@ npm install --save-dev aiyoke
 
 The repository itself uses pnpm 11.7.0 for locked development and release gates.
 
+Node 22 is an intentional support baseline, not an incidental local-version
+check. The supported CI and release matrix is Node 22 and 24; keeping that
+baseline lets the CLI, native ESM package, cryptographic verification, built-in
+test runner fixtures, abort/cancellation behavior, and bounded child-process
+isolation use one documented runtime contract without compatibility shims. Node
+20 may work for some commands, but it is outside the supported/tested contract.
+
 ## Five-minute setup
 
 From an existing TypeScript/Next.js repository:
@@ -98,6 +146,27 @@ complete deterministic operation set and fingerprint without writing. `apply`
 writes owned artifacts and `.aiyoke/lock.json`. A second unchanged apply reports
 zero writes. Commit the canonical configuration, generated artifacts appropriate
 for your team, and the lock file according to your repository policy.
+
+### Simple Mode
+
+You do not need to understand schema v3, registries, or runtime policy to start.
+Use the built-in opinionated preset:
+
+```sh
+npx aiyoke init --preset simple
+npx aiyoke plan && npx aiyoke apply && npx aiyoke check
+```
+
+It selects a concise Claude Code + OpenRouter setup, writes a canonical
+`aiyoke.yaml`, and keeps the advanced controls available when your repository
+outgrows the preset. Explicit `--languages`, `--frameworks`, or `--targets`
+flags can override the preset. Add `--json` for CI, or open the generated YAML
+when you need to tune packs, routes, ownership, migration, or runtime policy
+explicitly.
+
+Simple Mode is deliberately a workflow and documented preset, not a second
+configuration format. Every generated artifact still passes the same validation,
+ownership, deterministic-plan, and drift checks as an advanced configuration.
 
 The executable [Next.js quickstart](examples/quickstart-nextjs/README.md) walks
 through initialization, plan review, the generated tree, idempotent application,
@@ -247,6 +316,26 @@ The live smoke is opt-in, bounded, non-streaming, and prints token counts only.
 It defaults to `openrouter/free`; set `AIYOKE_LIVE_OPENROUTER_MODEL` to override
 the route. Default CI uses local transports and never needs provider credentials.
 
+## Extension trust and deployment
+
+Treat an extension as executable third-party code. A signed manifest gives you
+publisher identity and package integrity; it does not establish that the code is
+benign. The trust store is caller-owned, discovery is offline and consent-bound
+to the exact manifest digest, and revoked keys, manifests, content, symlinks, or
+oversized packages are rejected before import.
+
+| Deployment choice | What it provides | What it does not provide |
+| --- | --- | --- |
+| Signed discovery | Authenticity of the approved publisher and integrity of the package | A safety review or permission to trust arbitrary behavior |
+| Optional child-process renderer isolation | Bounded input/output, deadlines, cancellation, reduced environment, and crash containment | An operating-system sandbox; the child still has its OS user's available access |
+| Container, VM, or platform sandbox | A place to apply filesystem, network, identity, and resource policy | Automatic package authenticity; keep signature and consent checks too |
+
+For untrusted or merely unreviewed renderers, run the process inside a container,
+VM, or equivalent filesystem/network sandbox and grant the least privilege needed.
+Do not treat `renderSignedExtensionIsolated()` by itself as a security boundary.
+The complete trust and deployment story is in [Extension authoring](docs/extensions.md#trust-model-and-deployment)
+and [Security policy](SECURITY.md#threat-model).
+
 ## Extensions
 
 Targets, languages, frameworks, capability packs, and runtime templates implement
@@ -271,7 +360,8 @@ external `hello-target` template is under
 [`examples/extensions/hello-target`](examples/extensions/hello-target).
 
 See [Extension authoring](docs/extensions.md) and the [public API
-reference](docs/api.md). Process isolation is defense in depth, not an OS sandbox.
+reference](docs/api.md). Finding and error codes are cataloged in
+[Errors and findings](docs/errors-and-findings.md).
 
 ## Architecture
 

@@ -1,5 +1,8 @@
+import type { InitPreset } from "./extension-sdk/index.js";
+
 export type {
   ArtifactIntent,
+  BuiltinDiagnosticDefinition,
   HarnessModule,
   HarnessPlan,
   HarnessSpec,
@@ -21,6 +24,9 @@ export type {
   ExtensionDescriptor,
   ExtensionLoader,
   FrameworkExtension,
+  InitPreset,
+  InitPresetContext,
+  InitPresetSelection,
   IsolatedRendererResult,
   IsolatedSignedExtensionOptions,
   LanguageExtension,
@@ -44,16 +50,24 @@ export {
 export interface CreateAiyokeOptions {
   readonly root?: string;
   readonly extensions?: readonly RegisteredExtensionLoader[];
+  readonly initPresets?: readonly InitPreset[];
 }
 
 export async function createAiyoke(
   options: CreateAiyokeOptions = {}
 ): Promise<import("./engine/index.js").AiyokeEngine> {
   const { AiyokeEngine } = await import("./engine/index.js");
-  return AiyokeEngine.open(
-    options.root,
-    options.extensions === undefined ? {} : { extensions: options.extensions }
-  );
+  return AiyokeEngine.open(options.root, {
+    ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
+    ...(options.initPresets === undefined ? {} : { initPresets: options.initPresets })
+  });
+}
+
+export async function getBuiltinDiagnosticCatalog(): Promise<
+  readonly import("./core/index.js").BuiltinDiagnosticDefinition[]
+> {
+  const { BUILTIN_DIAGNOSTIC_CATALOG } = await import("./engine/diagnostics.js");
+  return BUILTIN_DIAGNOSTIC_CATALOG;
 }
 
 export async function discoverSignedExtension(

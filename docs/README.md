@@ -19,6 +19,9 @@ path; this page routes to the deeper contracts that ship with the npm package.
   rollback reference.
 - [CLI reference](cli.md) covers commands, flags, write behavior, output, and exit
   codes.
+- [Errors and findings](errors-and-findings.md) is the machine-readable catalog
+  of public error codes, built-in verification findings, and compatibility-kit
+  findings, with remediation guidance.
 - [Troubleshooting](troubleshooting.md) maps common errors to safe recovery steps.
 - [Production runtime harness contract](runtime-harness-contract.md) explains
   what generated reliability, observability, evaluation, safety, portability,
@@ -29,7 +32,9 @@ path; this page routes to the deeper contracts that ship with the npm package.
 - [Public API reference](api.md) documents every supported package entry point,
   export family, method, option, result union, and error contract.
 - [Extension authoring](extensions.md) covers descriptors, loaders,
-  compatibility, signed discovery, trust, and renderer isolation.
+  compatibility, signed discovery, trust, and renderer isolation. The
+  [trust-model section](extensions.md#trust-model-and-deployment) explains why
+  signatures and child processes are not substitutes for a container or VM.
 - The [external hello target](../examples/extensions/hello-target/README.md) is a
   complete out-of-tree extension package.
 - [Architecture](architecture.md) and the [ADRs](adr/) define dependency

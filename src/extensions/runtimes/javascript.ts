@@ -691,6 +691,90 @@ test("cache and evaluation boundary failures are contained and observable", asyn
     assert.ok(events.some((event) => event.type === "cache-read-failed"));
     assert.ok(events.some((event) => event.type === "cache-write-failed"));
 });
+test("survives deterministic policy pressure without exceeding resource bounds", async () => {
+    let active = 0;
+    let maximumActive = 0;
+    let calls = 0;
+    const events = [];
+    const runtime = new HarnessRuntime({ ...options, maxConcurrency: 4, maxBatchSize: 32 }, {
+        adapters: new AdapterRegistry().register("primary", {
+            async invoke() {
+                calls += 1;
+                active += 1;
+                maximumActive = Math.max(maximumActive, active);
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                active -= 1;
+                return {
+                    kind: "success",
+                    value: "ok",
+                    usage: { inputTokens: 1, outputTokens: 1, estimatedCostUsd: 0.001 }
+                };
+            }
+        }),
+        events: { emit: async (event) => void events.push(event) }
+    });
+    const requests = Array.from({ length: 32 }, (_, index) => ({
+        ...request,
+        id: "pressure-" + index,
+        metadata: { tenant: "public", apiKey: "secret-value" }
+    }));
+    const rounds = 8;
+    const results = [];
+    for (let round = 0; round < rounds; round += 1) {
+        results.push(...(await runtime.executeBatch(requests)));
+    }
+    const totalRequests = requests.length * rounds;
+    assert.equal(results.length, totalRequests);
+    assert.equal(results.every((result) => result.kind === "success"), true);
+    assert.equal(calls, totalRequests);
+    assert.equal(maximumActive, 4);
+    assert.equal(events.filter((event) => event.type === "request-started").length, totalRequests);
+    assert.equal(events.filter((event) => event.type === "attempt-started").length, totalRequests);
+    assert.equal(events.filter((event) => event.type === "request-succeeded").length, totalRequests);
+    assert.equal(JSON.stringify(events).includes("secret-value"), false);
+    const budgetRuntime = new HarnessRuntime({ ...options, maxConcurrency: 4, maxBatchSize: 32, maxEstimatedCostUsd: 0.0001 }, {
+        adapters: new AdapterRegistry().register("primary", {
+            async invoke() {
+                return {
+                    kind: "success",
+                    value: "too-expensive",
+                    usage: { inputTokens: 1, outputTokens: 1, estimatedCostUsd: 0.01 }
+                };
+            }
+        })
+    });
+    const budgetResults = await budgetRuntime.executeBatch(requests);
+    assert.equal(budgetResults.every((result) => result.kind === "failure" && result.failure.kind === "budget-exhausted"), true);
+    let now = 0;
+    let failingCalls = 0;
+    const stormRuntime = new HarnessRuntime({
+        ...options,
+        retry: { ...options.retry, maxAttempts: 1 },
+        fallbackRoutes: [],
+        circuitFailureThreshold: 2,
+        circuitResetAfterMs: 100
+    }, {
+        adapters: new AdapterRegistry().register("primary", {
+            async invoke() {
+                failingCalls += 1;
+                return { kind: "failure", failure: { kind: "rate-limit", message: "busy", retryable: true } };
+            }
+        }),
+        now: () => now,
+        sleep: async () => undefined
+    });
+    const firstFailure = await stormRuntime.execute({ ...request, id: "storm-1" });
+    const secondFailure = await stormRuntime.execute({ ...request, id: "storm-2" });
+    const circuitOpen = await stormRuntime.execute({ ...request, id: "storm-3" });
+    assert.equal(firstFailure.kind === "failure" ? firstFailure.failure.kind : "", "rate-limit");
+    assert.equal(secondFailure.kind === "failure" ? secondFailure.failure.kind : "", "rate-limit");
+    assert.equal(circuitOpen.kind === "failure" ? circuitOpen.failure.kind : "", "circuit-open");
+    assert.equal(failingCalls, 2);
+    now = 100;
+    const halfOpenFailure = await stormRuntime.execute({ ...request, id: "storm-4" });
+    assert.equal(halfOpenFailure.kind === "failure" ? halfOpenFailure.failure.kind : "", "rate-limit");
+    assert.equal(failingCalls, 3);
+});
 `;
 
 export const javascriptRuntime = createRuntimeTemplate({

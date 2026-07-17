@@ -36,7 +36,12 @@ renderer isolation removes host secrets, bounds serialized input/output,
 deadlines, artifacts, and V8 heap, and fails closed on protocol errors. It is not
 an OS sandbox: code can still use resources available to its operating-system
 user. Run genuinely untrusted extensions in a container, VM, or equivalent
-filesystem/network sandbox.
+filesystem/network sandbox. The deployment decision table and recommended
+least-privilege setup are in [Extension trust model and deployment](docs/extensions.md#trust-model-and-deployment).
+
+Automation should consume the stable error/finding identifiers in the [public
+error and finding catalog](docs/errors-and-findings.md), never parse diagnostic
+message text, and preserve unknown-code fallbacks as the catalog grows.
 
 Release artifacts are built in GitHub Actions, checked as exact tarballs,
 checksummed, accompanied by an SBOM, and published through npm trusted publishing

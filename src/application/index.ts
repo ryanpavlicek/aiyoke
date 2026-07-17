@@ -1,5 +1,12 @@
 export { type ApplyResult, HarnessCompiler } from "./compiler.js";
 export {
+  createDefaultInitPresetRegistry,
+  type InitPreset,
+  type InitPresetContext,
+  InitPresetRegistry,
+  type InitPresetSelection
+} from "./init-presets.js";
+export {
   type AppliedMigration,
   type SchemaDocument,
   type SchemaMigration,

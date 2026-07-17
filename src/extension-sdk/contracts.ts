@@ -48,6 +48,26 @@ export interface DetectionResult {
   readonly reasons: readonly string[];
 }
 
+/** Pure extension contract consumed by the application-layer preset registry. */
+export interface InitPresetContext {
+  readonly defaults: HarnessSpec;
+  readonly detectedLanguages: readonly ExtensionId[];
+  readonly detectedFrameworks: readonly ExtensionId[];
+}
+
+export interface InitPresetSelection {
+  readonly languages?: readonly ExtensionId[];
+  readonly frameworks?: readonly ExtensionId[];
+  readonly targetAdapters?: readonly ExtensionId[];
+}
+
+export interface InitPreset {
+  readonly id: ExtensionId;
+  readonly displayName: string;
+  readonly description: string;
+  select(context: InitPresetContext): InitPresetSelection;
+}
+
 export interface ContributionContext {
   readonly spec: HarnessSpec;
   readonly workspace: WorkspaceSnapshot;
