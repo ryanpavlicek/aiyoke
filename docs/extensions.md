@@ -262,6 +262,20 @@ private files to call it. The registry resolves requirements in deterministic
 dependency-first order, rejects missing requirements/cycles/conflicts, and
 memoizes each loader's promise so a lazy extension is loaded at most once.
 
+## Verification and finding codes
+
+Verification returns structured `VerificationFinding` values. Use an `error`
+when the target artifact cannot be trusted, a `warning` for provider drift or
+an optional capability, and `info` for a successful readiness signal. Built-in
+codes, exit behavior, stability expectations, and remediation are cataloged in
+[Errors and findings](errors-and-findings.md#built-in-verification-findings).
+Extension-defined codes remain valid and intentionally open; prefix them with a
+stable publisher/extension namespace and document them for downstream tooling.
+
+Verification must not silently repair files. Findings should include a safe
+relative `path` and target ID when they make the problem more actionable, and
+must never include credentials or renderer-controlled secrets.
+
 ## Contribution rules
 
 Detection is evidence, not mutation. Return a confidence in `[0, 1]` and
@@ -281,10 +295,6 @@ the section when no markers exist, replaces only the bounded section on later
 runs, and reports malformed or duplicated markers as conflicts. Generated and
 user-owned artifacts retain their stricter whole-file behavior.
 
-Verification should report structured `VerificationFinding` values. A warning
-is appropriate for provider drift or an optional capability; an error means the
-target artifact cannot be trusted. Verification must not silently repair files.
-
 ## Layer boundaries
 
 Extension code may import `aiyoke/core`, `aiyoke/extension-sdk`, and helpers in
@@ -293,11 +303,23 @@ adapters, CLI/interfaces, or another extension's implementation. Ask the engine
 for composition through a loader or contract instead. The architecture check
 will reject forbidden local static imports.
 
-## Trust and release hygiene
+## Trust model and deployment
 
 An extension can execute code, commands, hooks, and MCP transports. Review it as
 you would any dependency, pin the version, use signed discovery for installable
-third-party packages, and document network/process access.
+third-party packages, and document network/process access. A signature proves
+the approved publisher identity and package integrity; it does not prove that
+the code is safe. Trust roots, revocations, and consent are application-owned
+policy, not an implicit Aiyoke download or approval service.
+
+The optional renderer adapter runs a bounded child process with a reduced
+environment, input/output limits, a deadline, cancellation, and result checks.
+This is defense in depth and crash containment, not an OS sandbox. The process
+can still use resources available to its OS user, including network sockets and
+absolute filesystem paths. Run untrusted or unreviewed renderers in a container,
+VM, or equivalent filesystem/network sandbox with least privilege, and retain
+signature and consent checks there.
+
 Never place API keys in descriptors, artifact content, fixtures, snapshots, or
 logs; use an environment-variable reference.
 

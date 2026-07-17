@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The project follows
 
 ## Unreleased
 
+### Added
+
+- Add the registered `simple` initialization preset for an auto-detected Claude
+  Code + OpenRouter setup, with explicit flag overrides and custom preset
+  registration through the lazy public facade.
+- Add a lazy machine-readable built-in diagnostic catalog and a frozen core
+  error-code tuple for CI and integration tooling.
+- Add cross-language deterministic runtime pressure rounds plus property-based
+  managed-section preservation and plan-fingerprint stability tests.
+
 ### Documentation
 
 - Add complete contributor onboarding, a job-oriented documentation map, an
@@ -13,6 +23,9 @@ All notable changes to this project are documented here. The project follows
 - Validate Markdown fences, reference links, local anchors, CLI/help parity, the
   generated quickstart tree, drift recovery, and bounded external-link
   availability through local and scheduled checks.
+- Lead with a 60-second Simple Mode workflow, document the Node 22 support
+  baseline, promote the extension trust/deployment model, and catalog stable
+  errors and findings with remediation guidance.
 
 ## 0.3.3 — 2026-07-16
 

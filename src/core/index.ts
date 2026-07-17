@@ -1,5 +1,11 @@
 export { compareCodePoints } from "./compare.js";
-export { AiyokeError, type AiyokeErrorCode } from "./error.js";
+export type {
+  BuiltinDiagnosticBase,
+  BuiltinDiagnosticDefinition,
+  BuiltinErrorDiagnostic,
+  BuiltinFindingDiagnostic
+} from "./diagnostic.js";
+export { AIYOKE_ERROR_CODES, AiyokeError, type AiyokeErrorCode } from "./error.js";
 export { type ExtensionId, extensionId, safeRelativePath } from "./identity.js";
 export { canonicalJson, type JsonObject, type JsonPrimitive, type JsonValue } from "./json.js";
 export {

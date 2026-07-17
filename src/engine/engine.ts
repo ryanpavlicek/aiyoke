@@ -2,7 +2,10 @@ import { basename } from "node:path";
 import {
   type AppliedMigration,
   type ApplyResult,
+  createDefaultInitPresetRegistry,
   HarnessCompiler,
+  type InitPreset,
+  type InitPresetRegistry,
   runtimeTemplateReferences,
   type SchemaMigrationRegistry
 } from "../application/index.js";
@@ -40,6 +43,7 @@ import { Sha256Hash } from "../infrastructure/hashing/index.js";
 import { createDefaultRegistry } from "./registry.js";
 
 export interface InitializeOptions {
+  readonly preset?: ExtensionId;
   readonly languages?: readonly ExtensionId[];
   readonly frameworks?: readonly ExtensionId[];
   readonly targetAdapters?: readonly ExtensionId[];
@@ -77,6 +81,7 @@ export interface DetectedExtension {
 
 export interface EngineOptions {
   readonly extensions?: readonly ExtensionLoader[];
+  readonly initPresets?: readonly InitPreset[];
 }
 
 export interface MigrateOptions {
@@ -102,10 +107,12 @@ export class AiyokeEngine {
   readonly #registry: ExtensionRegistry;
   readonly #migrations: SchemaMigrationRegistry;
   readonly #hash: Sha256Hash;
+  readonly #initPresets: InitPresetRegistry;
 
   private constructor(workspace: NodeWorkspace, options: EngineOptions) {
     this.#workspace = workspace;
     this.#registry = createDefaultRegistry(options.extensions);
+    this.#initPresets = createDefaultInitPresetRegistry(options.initPresets);
     this.#migrations = createSchemaMigrationRegistry();
     this.#hash = new Sha256Hash();
     this.#compiler = new HarnessCompiler(this.#registry, workspace, this.#hash);
@@ -155,7 +162,18 @@ export class AiyokeEngine {
     const detectedFrameworks = detected
       .filter((item) => item.descriptor.kind === "framework" && item.detection.confidence >= 0.75)
       .map((item) => item.descriptor.id);
-    const selectedTargets = this.#selectTargets(defaults.targets, options.targetAdapters);
+    const presetSelection =
+      options.preset === undefined
+        ? {}
+        : this.#initPresets.get(options.preset).select({
+            defaults,
+            detectedLanguages,
+            detectedFrameworks
+          });
+    const selectedTargets = this.#selectTargets(
+      defaults.targets,
+      options.targetAdapters ?? presetSelection.targetAdapters
+    );
     const spec: HarnessSpec = {
       ...defaults,
       composition: {
@@ -163,14 +181,26 @@ export class AiyokeEngine {
         stack: {
           languages:
             options.languages ??
+            presetSelection.languages ??
             (detectedLanguages.length > 0 ? detectedLanguages : defaultStack.languages),
-          frameworks: options.frameworks ?? detectedFrameworks
+          frameworks: options.frameworks ?? presetSelection.frameworks ?? detectedFrameworks
         }
       },
       targets: selectedTargets
     };
-    await this.#workspace.writeAtomic("aiyoke.yaml", stringifyHarnessSpec(spec), false);
-    return { path: "aiyoke.yaml", created: true, spec };
+    const source = stringifyHarnessSpec(spec);
+    const validated = parseHarnessSpec(source);
+    await this.#validateSelections(validated);
+    await this.#workspace.writeAtomic("aiyoke.yaml", source, false);
+    return { path: "aiyoke.yaml", created: true, spec: validated };
+  }
+
+  listInitPresets(): readonly Pick<InitPreset, "id" | "displayName" | "description">[] {
+    return this.#initPresets.list().map(({ id, displayName, description }) => ({
+      id,
+      displayName,
+      description
+    }));
   }
 
   async loadSpec(): Promise<HarnessSpec> {

@@ -16,11 +16,16 @@ unsafe identifiers, invalid configuration, and I/O containment failures exit 1.
 ## `init`
 
 ```sh
-aiyoke init [--languages <ids>] [--frameworks <ids>] [--targets <ids>] [--force]
+aiyoke init [--preset <id>] [--languages <ids>] [--frameworks <ids>] [--targets <ids>] [--force]
 ```
 
 Creates schema-v3 `aiyoke.yaml`. Comma-separated selections must be registered
-IDs. If a configuration exists, the command makes no change unless `--force` is
+IDs. `--preset simple` is the opinionated low-entry-cost path for a concise
+Claude Code + OpenRouter setup; it fills ordinary selections and still emits
+the same full schema-v3 document and validation evidence. Explicit selection
+flags override the preset's corresponding lists. Presets are registered through
+the application layer, so hosts can add one without modifying core logic.
+If a configuration exists, the command makes no change unless `--force` is
 present. `init` does not render target artifacts; follow with `plan` and `apply`.
 
 ## `config`
@@ -65,7 +70,9 @@ already-synchronized result. Repeating an unchanged apply performs no writes.
 `check` verifies generated lock/artifact digests and target-specific invariants.
 `doctor` includes those findings plus readiness diagnostics for missing language
 or target selections. Both exit 1 if any finding has severity `error`; warnings
-alone exit 0.
+alone exit 0. See the [error and finding catalog](errors-and-findings.md) for
+stable codes, severity, and remediation. Extension-defined finding codes remain
+valid strings and should be handled with an unknown-code fallback.
 
 ## `migrate`
 

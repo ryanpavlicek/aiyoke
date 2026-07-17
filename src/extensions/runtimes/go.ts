@@ -696,6 +696,8 @@ const TEST_SOURCE = `package aiyokeruntime
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1034,6 +1036,114 @@ func TestCacheFailuresAreContainedAndObservable(t *testing.T) {
 	}
 	if !seenReadFailure || !seenWriteFailure {
 		t.Fatalf("cache failures were not observable: %#v", events.events)
+	}
+}
+
+type policyPressureAdapter struct {
+	mu      sync.Mutex
+	active  int
+	maximum int
+	calls   int
+}
+
+func (adapter *policyPressureAdapter) Invoke(context.Context, ModelRequest) ModelResult {
+	adapter.mu.Lock()
+	adapter.active++
+	adapter.calls++
+	if adapter.active > adapter.maximum {
+		adapter.maximum = adapter.active
+	}
+	adapter.mu.Unlock()
+	time.Sleep(time.Millisecond)
+	adapter.mu.Lock()
+	adapter.active--
+	adapter.mu.Unlock()
+	return ModelSuccess{Value: "ok", Usage: Usage{InputTokens: 1, OutputTokens: 1, EstimatedCostUSD: 0.001}}
+}
+
+func TestRuntimePolicyPressureIsBoundedAndRedacted(t *testing.T) {
+	adapter := &policyPressureAdapter{}
+	registry := NewAdapterRegistry()
+	if err := registry.Register("primary", adapter); err != nil {
+		t.Fatal(err)
+	}
+	options := testOptions()
+	options.MaxConcurrency = 4
+	options.MaxBatchSize = 32
+	options.Retry.MaxAttempts = 1
+	options.FallbackRoutes = nil
+	events := &memoryEvents{}
+	runtime, err := NewHarnessRuntime(options, RuntimeDependencies{Adapters: registry, Events: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := make([]ModelRequest, 32)
+	for index := range requests {
+		requests[index] = testRequest(fmt.Sprintf("pressure-%d", index))
+		requests[index].Metadata = map[string]string{"tenant": "public", "apiKey": "secret-value"}
+	}
+	const rounds = 8
+	for round := 0; round < rounds; round++ {
+		results, err := runtime.ExecuteBatch(context.Background(), requests, ExecuteOptions{})
+		if err != nil || len(results) != len(requests) {
+			t.Fatalf("pressure batch failed: %v %#v", err, results)
+		}
+		for _, result := range results {
+			if _, ok := result.(ModelSuccess); !ok {
+				t.Fatalf("pressure request failed: %#v", result)
+			}
+		}
+	}
+	totalRequests := len(requests) * rounds
+	adapter.mu.Lock()
+	maximum, calls := adapter.maximum, adapter.calls
+	adapter.mu.Unlock()
+	if maximum != options.MaxConcurrency || calls != totalRequests {
+		t.Fatalf("resource bound violated: maximum=%d calls=%d", maximum, calls)
+	}
+	seenStarted, seenAttempted, seenSucceeded := 0, 0, 0
+	events.mu.Lock()
+	for _, event := range events.events {
+		switch event["type"] {
+		case "request-started":
+			seenStarted++
+		case "attempt-started":
+			seenAttempted++
+		case "request-succeeded":
+			seenSucceeded++
+		}
+		if strings.Contains(fmt.Sprint(event), "secret-value") {
+			events.mu.Unlock()
+			t.Fatal("event leaked a secret value")
+		}
+	}
+	events.mu.Unlock()
+	if seenStarted != totalRequests || seenAttempted != totalRequests || seenSucceeded != totalRequests {
+		t.Fatalf("event invariant violated: started=%d attempted=%d succeeded=%d", seenStarted, seenAttempted, seenSucceeded)
+	}
+
+	limit := 0.0001
+	budgetOptions := options
+	budgetOptions.MaxEstimatedCostUSD = &limit
+	billingAdapters := NewAdapterRegistry()
+	if err := billingAdapters.Register("primary", fallbackAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	billingRuntime, err := NewHarnessRuntime(budgetOptions, RuntimeDependencies{
+		Adapters: billingAdapters,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	budgetResults, err := billingRuntime.ExecuteBatch(context.Background(), requests, ExecuteOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range budgetResults {
+		failure, ok := result.(ModelFailure)
+		if !ok || failure.Kind != FailureBudgetExhausted {
+			t.Fatalf("cost budget did not fail closed: %#v", result)
+		}
 	}
 }
 `;

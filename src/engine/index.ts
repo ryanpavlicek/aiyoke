@@ -1,3 +1,5 @@
+export type { InitPreset } from "../extension-sdk/index.js";
+export { BUILTIN_DIAGNOSTIC_CATALOG } from "./diagnostics.js";
 export {
   AiyokeEngine,
   type ConfigureOptions,
