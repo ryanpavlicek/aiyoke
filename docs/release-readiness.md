@@ -122,8 +122,11 @@ matrices.
 
 ## Public release decision
 
-The 0.3 release candidate may be tagged only when every 0.2 and 0.3 gate is
-Proven, `pnpm check` and all release workflows pass from a clean clone, the packed
-tarball is the artifact tested in installation jobs, and no unresolved critical
-or high-severity security finding remains. Any exception must be documented as a
-time-bounded release blocker, not silently reclassified as future work.
+Version 0.3 is approved and complete. Every 0.2 and 0.3 gate is Proven,
+`pnpm check` and the protected release workflow passed from the tagged source,
+the packed tarball was the artifact tested and published, and no unresolved
+critical or high-severity security finding remained. The public
+[v0.3.3 release](https://github.com/ryanpavlicek/aiyoke/releases/tag/v0.3.3)
+and [release workflow](https://github.com/ryanpavlicek/aiyoke/actions/runs/29550589759)
+are the canonical completion evidence. Future corrections follow the documented
+patch-release and rollback process rather than reopening the 0.3 acceptance gate.
