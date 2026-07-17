@@ -30,7 +30,7 @@ after public field use rather than serving as the first usable build. See
 - Define a provider-neutral runtime-harness domain contract and generate the
   first reliability, observability, evaluation, safety, and budget primitives.
 
-## 0.3 — public release candidate
+## 0.3 — public release (complete)
 
 - Add signed third-party extension discovery without expanding core dependencies.
 - Publish extension-authoring examples and a standalone compatibility test harness.
@@ -41,6 +41,15 @@ after public field use rather than serving as the first usable build. See
   compatibility evidence before publishing.
 - Complete and verify the seven production runtime capability families in
   `docs/runtime-harness-contract.md` across supported language templates.
+
+Completion is evidenced by the public [v0.3.3 release][release], the protected
+[release workflow][workflow], and the fully proven
+[public release readiness audit](release-readiness.md). The npm package, exact
+tarball, checksum, SPDX SBOM, and provenance attestations were produced from the
+same verified tag.
+
+[release]: https://github.com/ryanpavlicek/aiyoke/releases/tag/v0.3.3
+[workflow]: https://github.com/ryanpavlicek/aiyoke/actions/runs/29550589759
 
 ## 1.0 — stable contracts
 
