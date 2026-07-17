@@ -35,7 +35,7 @@ export interface CliRuntime {
   readonly prompt?: ConfigPromptPort;
 }
 
-const HELP = `aiyoke — deterministic AI harness compiler
+export const CLI_HELP = `aiyoke — deterministic AI harness compiler
 
 Usage:
   aiyoke init [--languages python,typescript] [--frameworks fastapi] [--targets claude-code,codex] [--force]
@@ -53,7 +53,7 @@ Usage:
 Global options:
   --root <path>    Workspace root (default: current directory)
   --json           Emit machine-readable JSON
-  --dry-run        Preview migration or rollback output without writing
+  --dry-run        Preview config, migration, or rollback output without writing
   --help           Show this help
 `;
 
@@ -270,7 +270,7 @@ export async function runCli(
   try {
     options = parseArguments(args);
     if (options.command === "help") {
-      emit(HELP, false);
+      emit(CLI_HELP, false);
       return 0;
     }
 

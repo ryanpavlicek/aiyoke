@@ -10,6 +10,8 @@ import { gunzipSync } from "node:zlib";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const requiredEntries = [
   "package/CHANGELOG.md",
+  "package/CODE_OF_CONDUCT.md",
+  "package/CONTRIBUTING.md",
   "package/LICENSE",
   "package/README.md",
   "package/SECURITY.md",
@@ -21,9 +23,13 @@ const requiredEntries = [
   "package/dist/index.d.ts",
   "package/dist/index.js",
   "package/docs/architecture.md",
+  "package/docs/README.md",
   "package/docs/extensions.md",
   "package/examples/extensions/hello-target/aiyoke-extension.template.json",
   "package/examples/extensions/hello-target/package/index.mjs",
+  "package/examples/quickstart-nextjs/README.md",
+  "package/examples/quickstart-nextjs/expected-generated-paths.json",
+  "package/examples/quickstart-nextjs/starter/package.json",
   "package/package.json"
 ];
 const forbidden = [

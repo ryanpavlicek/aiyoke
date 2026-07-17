@@ -10,7 +10,7 @@ unsafe identifiers, invalid configuration, and I/O containment failures exit 1.
 | --- | --- |
 | `--root <path>` | Workspace root; defaults to the current directory. |
 | `--json` | Emit structured results/errors for automation. |
-| `--dry-run` | Preview `config`, `migrate`, or `rollback` without writing. |
+| `--dry-run` | Preview `config`, `migrate`, or `rollback` without writing; invalid for other commands. |
 | `--help`, `-h` | Print usage and exit 0. |
 
 ## `init`
@@ -108,3 +108,7 @@ With `--json`, errors are written to stderr as:
 
 Human-readable errors contain the stable message but not stack traces, secret
 values, or renderer-controlled exception text.
+
+The installed help output and this command/flag inventory are compared by an
+executable documentation test. A CLI change must update both in the same pull
+request.

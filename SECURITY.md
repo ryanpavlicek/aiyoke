@@ -11,9 +11,11 @@ There is no public bug-bounty promise.
 
 ## Supported versions
 
-Before 0.3.1, only the current `main` release candidate receives security fixes.
-After 0.3.1, the latest minor release receives fixes; older minors may be asked to
-upgrade unless an announced support window says otherwise.
+The latest published 0.3 patch and the current `main` branch receive security
+fixes. Older 0.3 patches and pre-0.3 releases are unsupported; reporters and
+users may be asked to upgrade to the patched release. A broader minor-version
+support window will be announced before 1.0 if the project can maintain it
+without weakening response quality.
 
 ## Threat model
 
