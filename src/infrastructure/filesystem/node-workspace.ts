@@ -110,8 +110,13 @@ export class NodeWorkspace implements WorkspacePort {
       }
       return content;
     } catch (error) {
-      if (isMissing(error)) return undefined;
       if (error instanceof AiyokeError) throw error;
+      try {
+        await this.#safeTarget(path);
+      } catch (validationError) {
+        if (validationError instanceof AiyokeError) throw validationError;
+      }
+      if (isMissing(error)) return undefined;
       if (error instanceof Error && "code" in error && error.code === "ELOOP") {
         throw new AiyokeError("INVALID_PATH", `Refusing read substitution for ${path}.`, { path });
       }

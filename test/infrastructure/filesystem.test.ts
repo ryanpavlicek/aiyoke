@@ -86,9 +86,9 @@ describe("NodeWorkspace", () => {
       }
     });
 
-    await expect(workspace.read("source/value.txt")).rejects.toThrow(
-      /read substitution|escapes the workspace|non-directory/
-    );
+    await expect(workspace.read("source/value.txt")).rejects.toMatchObject({
+      code: "INVALID_PATH"
+    });
     expect(swapped).toBe(true);
   });
 
