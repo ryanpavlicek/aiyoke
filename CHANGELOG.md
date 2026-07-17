@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The project follows
 
 ## Unreleased
 
+## 0.3.3 — 2026-07-16
+
+### Security
+
+- Bind workspace reads to an opened file handle and revalidate file identity and
+  parent containment so symlink or directory substitution cannot redirect a
+  verified read outside the workspace.
+- Constrain the pinned Grok Build client probe to its hardcoded trusted x.ai
+  artifact URL while retaining exact SHA-256 verification.
+
 ## 0.3.2 — 2026-07-16
 
 ### Changed

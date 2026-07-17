@@ -1,6 +1,6 @@
 {
   "name": "aiyoke",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Deterministic, extensible AI harness compiler for Claude Code, ChatGPT/Codex, Grok/Grok Build, and OpenRouter.",
   "type": "module",
   "private": false,

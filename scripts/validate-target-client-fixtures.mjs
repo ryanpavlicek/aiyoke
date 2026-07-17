@@ -24,6 +24,7 @@ const versions = JSON.parse(
   await readFile(new URL("./target-client-versions.json", import.meta.url), "utf8")
 );
 const secretCanary = "aiyoke-secret-canary-must-never-be-written";
+const PINNED_GROK_BUILD_VERSION = "0.2.101";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -387,21 +388,28 @@ async function sha256(path) {
 }
 
 async function downloadGrok(destination) {
-  const source =
+  assert(
+    versions.grokBuild.version === PINNED_GROK_BUILD_VERSION,
+    "Grok Build manifest and trusted download version differ."
+  );
+  const platform =
     process.arch === "x64" && process.platform === "linux"
-      ? versions.grokBuild.linuxX64
+      ? { source: versions.grokBuild.linuxX64, artifact: "linux-x86_64" }
       : process.arch === "x64" && process.platform === "win32"
-        ? versions.grokBuild.windowsX64
+        ? { source: versions.grokBuild.windowsX64, artifact: "windows-x86_64.exe" }
         : undefined;
   assert(
-    source !== undefined,
+    platform !== undefined,
     "Pinned Grok native validation supports Linux and Windows x64; use contract validation on other platforms."
   );
-  const response = await fetch(source.url, { signal: AbortSignal.timeout(180_000) });
+  const trustedUrl = `https://x.ai/cli/grok-${PINNED_GROK_BUILD_VERSION}-${platform.artifact}`;
+  assert(platform.source.url === trustedUrl, "Grok download URL is outside the trusted pin.");
+  assert(/^[a-f0-9]{64}$/u.test(platform.source.sha256), "Grok SHA-256 pin is malformed.");
+  const response = await fetch(trustedUrl, { signal: AbortSignal.timeout(180_000) });
   assert(response.ok && response.body !== null, `Grok download failed: ${response.status}.`);
   await pipeline(Readable.fromWeb(response.body), createWriteStream(destination, { flags: "wx" }));
   assert(
-    (await sha256(destination)) === source.sha256,
+    (await sha256(destination)) === platform.source.sha256,
     "Pinned Grok binary SHA-256 did not match."
   );
   await chmod(destination, 0o755);

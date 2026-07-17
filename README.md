@@ -22,7 +22,7 @@ the core.
 
 ## Status
 
-Version 0.3.2 is the current public hardening release. Its code, target,
+Version 0.3.3 is the current public hardening release. Its code, target,
 language, framework, runtime, package, and clean-clone gates have reproducible evidence in
 [Public release readiness](docs/release-readiness.md). Publication remains a
 deliberate maintainer action behind the protected npm environment; unproven
