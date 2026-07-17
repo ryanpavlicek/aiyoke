@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { constants, type Stats } from "node:fs";
 import {
   chmod,
   lstat,
   mkdir,
+  open,
   readdir,
-  readFile,
   realpath,
   rename,
   rm,
@@ -29,9 +30,17 @@ function samePath(left: string, right: string): boolean {
   return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
 }
 
+function sameFile(left: Stats, right: Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
 export type AtomicWriteCheckpoint = "directories-verified" | "temporary-staged";
 
 export interface NodeWorkspaceOptions {
+  readonly onReadCheckpoint?: (
+    checkpoint: "target-verified",
+    context: { readonly path: string; readonly target: string }
+  ) => Promise<void>;
   readonly onAtomicWriteCheckpoint?: (
     checkpoint: AtomicWriteCheckpoint,
     context: { readonly path: string; readonly parent: string; readonly temporary?: string }
@@ -65,21 +74,53 @@ export class NodeWorkspace implements WorkspacePort {
 
   async read(path: string): Promise<string | undefined> {
     const target = await this.#safeTarget(path);
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
     try {
-      const metadata = await lstat(target);
-      if (metadata.isSymbolicLink() || !metadata.isFile()) {
+      const initialMetadata = await lstat(target);
+      if (initialMetadata.isSymbolicLink() || !initialMetadata.isFile()) {
         throw new AiyokeError("INVALID_PATH", `Refusing to read non-regular file ${path}.`, {
           path
         });
       }
-      return await readFile(target, "utf8");
+      await this.options.onReadCheckpoint?.("target-verified", { path, target });
+      const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+      handle = await open(target, constants.O_RDONLY | noFollow);
+      const [openedMetadata, currentMetadata] = await Promise.all([
+        handle.stat(),
+        lstat(target),
+        this.#verifiedDirectory(dirname(target), path)
+      ]);
+      if (
+        !openedMetadata.isFile() ||
+        currentMetadata.isSymbolicLink() ||
+        !currentMetadata.isFile() ||
+        !sameFile(openedMetadata, currentMetadata)
+      ) {
+        throw new AiyokeError("INVALID_PATH", `Refusing read substitution for ${path}.`, { path });
+      }
+      const content = await handle.readFile("utf8");
+      const afterMetadata = await lstat(target);
+      await this.#verifiedDirectory(dirname(target), path);
+      if (
+        afterMetadata.isSymbolicLink() ||
+        !afterMetadata.isFile() ||
+        !sameFile(openedMetadata, afterMetadata)
+      ) {
+        throw new AiyokeError("INVALID_PATH", `Refusing read substitution for ${path}.`, { path });
+      }
+      return content;
     } catch (error) {
       if (isMissing(error)) return undefined;
       if (error instanceof AiyokeError) throw error;
+      if (error instanceof Error && "code" in error && error.code === "ELOOP") {
+        throw new AiyokeError("INVALID_PATH", `Refusing read substitution for ${path}.`, { path });
+      }
       throw new AiyokeError("WORKSPACE_IO", `Could not read ${path}.`, {
         path,
         cause: error instanceof Error ? error.message : String(error)
       });
+    } finally {
+      await handle?.close().catch(() => undefined);
     }
   }
 

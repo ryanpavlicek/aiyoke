@@ -69,6 +69,29 @@ describe("NodeWorkspace", () => {
     );
   });
 
+  it("fails closed when a verified read ancestor is substituted", async () => {
+    const root = await temporaryRoot("aiyoke-read-race-");
+    const outside = await temporaryRoot("aiyoke-read-outside-");
+    await mkdir(join(root, "source"));
+    await writeFile(join(root, "source", "value.txt"), "inside\n");
+    await writeFile(join(outside, "value.txt"), "outside secret\n");
+    let swapped = false;
+    const workspace = await NodeWorkspace.open(root, {
+      async onReadCheckpoint(_checkpoint, context) {
+        swapped = true;
+        const parent = join(root, "source");
+        await rename(parent, join(root, "original-source"));
+        await symlink(outside, parent, process.platform === "win32" ? "junction" : "dir");
+        expect(context.target).toBe(join(parent, "value.txt"));
+      }
+    });
+
+    await expect(workspace.read("source/value.txt")).rejects.toThrow(
+      /read substitution|escapes the workspace|non-directory/
+    );
+    expect(swapped).toBe(true);
+  });
+
   it.each(["directories-verified", "temporary-staged"] as const)(
     "fails closed when an ancestor becomes a symlink after %s",
     async (raceCheckpoint) => {
