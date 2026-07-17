@@ -22,8 +22,8 @@ the core.
 
 ## Status
 
-Version 0.3.1 is the first public release. Its code, target, language, framework,
-runtime, package, and clean-clone gates have reproducible evidence in
+Version 0.3.2 is the current public hardening release. Its code, target,
+language, framework, runtime, package, and clean-clone gates have reproducible evidence in
 [Public release readiness](docs/release-readiness.md). Publication remains a
 deliberate maintainer action behind the protected npm environment; unproven
 behavior is not silently presented as complete.
@@ -315,9 +315,12 @@ pnpm test:package
 ```
 
 CI separately enforces formatting/types/architecture, Node 22 and 24 on Linux,
-Windows, and macOS, coverage, package contents/npm install/CLI smoke, production
+Windows, and macOS, coverage of the complete source tree, package contents/npm
+install/CLI smoke, strict publint and ESM type-resolution checks, production
 dependency audit, dependency review, generated native runtimes, framework
 adapters, strict target contracts, and pinned Claude/Codex/Grok client probes.
+Direct tool versions and third-party workflow actions are immutable pins; automated
+tests reject floating replacements.
 Tagged releases build and attest one exact tarball; see [Release
 operations](docs/releasing.md).
 

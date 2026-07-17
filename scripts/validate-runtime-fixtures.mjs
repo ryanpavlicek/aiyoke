@@ -25,6 +25,20 @@ function run(command, args, options = {}) {
   }
 }
 
+function rustLinkArguments() {
+  if (process.platform !== "win32") return [];
+  const result = spawnSync("rustc", ["--version", "--verbose"], {
+    encoding: "utf8",
+    env: process.env,
+    shell: false
+  });
+  if (result.error !== undefined) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`rustc --version --verbose failed (${result.status}).\n${result.stderr}`);
+  }
+  return /^host: .*windows-gnu$/mu.test(result.stdout) ? ["-C", "link-self-contained=yes"] : [];
+}
+
 const executedAcceptanceArtifacts = new Map([
   [
     "typescript",
@@ -179,8 +193,7 @@ try {
   run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_tooling.py"]);
   run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_evaluation.py"]);
   run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_responses.py"]);
-  run("go", [
-    "test",
+  const goSources = [
     join(goDirectory, "runtime.go"),
     join(goDirectory, "runtime_test.go"),
     join(goDirectory, "tooling.go"),
@@ -189,7 +202,14 @@ try {
     join(goDirectory, "evaluation_test.go"),
     join(goDirectory, "responses_provider.go"),
     join(goDirectory, "responses_provider_test.go")
-  ]);
+  ];
+  if (process.platform === "win32") {
+    const goTestBinary = join(goDirectory, "aiyoke-go-runtime-tests.exe");
+    run("go", ["test", "-c", "-o", goTestBinary, ...goSources]);
+    run(goTestBinary, []);
+  } else {
+    run("go", ["test", ...goSources]);
+  }
   run("gofmt", ["-d", join(goDirectory, "runtime.go"), join(goDirectory, "runtime_test.go")], {
     requireEmptyStdout: true
   });
@@ -219,10 +239,12 @@ try {
     join(rustDirectory, "responses_provider.rs"),
     join(rustDirectory, "responses_provider_test.rs")
   ]);
+  const rustLinkArgs = rustLinkArguments();
   run("rustc", [
     "--edition",
     "2021",
     "--test",
+    ...rustLinkArgs,
     "--out-dir",
     rustDirectory,
     join(rustDirectory, "runtime_test.rs")
@@ -233,6 +255,7 @@ try {
       "--edition",
       "2021",
       "--test",
+      ...rustLinkArgs,
       "--out-dir",
       rustDirectory,
       join(rustDirectory, `${module}_test.rs`)
@@ -246,6 +269,7 @@ try {
     "--edition",
     "2021",
     "--test",
+    ...rustLinkArgs,
     "--out-dir",
     rustDirectory,
     join(rustDirectory, "responses_provider_test.rs")
@@ -275,5 +299,5 @@ if (process.env.AIYOKE_KEEP_RUNTIME_FIXTURE === "1") {
   if (!basename(resolved).startsWith("aiyoke-runtime-validation-")) {
     throw new Error(`Refusing to remove unexpected runtime fixture ${resolved}.`);
   }
-  await rm(resolved, { recursive: true, force: true });
+  await rm(resolved, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

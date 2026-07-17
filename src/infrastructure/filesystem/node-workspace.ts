@@ -26,9 +26,7 @@ function inside(root: string, target: string): boolean {
 }
 
 function samePath(left: string, right: string): boolean {
-  return process.platform === "win32"
-    ? left.toLocaleLowerCase() === right.toLocaleLowerCase()
-    : left === right;
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
 }
 
 export type AtomicWriteCheckpoint = "directories-verified" | "temporary-staged";

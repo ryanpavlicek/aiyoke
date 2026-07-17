@@ -118,8 +118,25 @@ describe("ExtensionRegistry", () => {
       .registerPack({ descriptor: declared.descriptor, load: returned.load })
       .freeze();
     await expect(registry.get({ kind: "pack", id: extensionId("declared") })).rejects.toThrow(
-      /returned pack:returned/
+      /different descriptor.*pack:returned/
     );
+
+    const changedMetadata = packLoader("same-id");
+    const metadataRegistry = new ExtensionRegistry()
+      .registerPack({
+        descriptor: changedMetadata.descriptor,
+        async load() {
+          const loaded = await changedMetadata.load();
+          return {
+            ...loaded,
+            descriptor: { ...loaded.descriptor, description: "Changed after registration." }
+          };
+        }
+      })
+      .freeze();
+    await expect(
+      metadataRegistry.get({ kind: "pack", id: extensionId("same-id") })
+    ).rejects.toThrow(/different descriptor/);
   });
 
   it("lists and filters deterministic registry metadata", () => {

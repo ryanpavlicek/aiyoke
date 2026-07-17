@@ -1,4 +1,4 @@
-import { extensionId, safeRelativePath } from "../core/index.js";
+import { canonicalJson, extensionId, safeRelativePath } from "../core/index.js";
 import {
   EXTENSION_API_VERSION,
   type ExtensionDescriptor,
@@ -220,15 +220,6 @@ function descriptor(value: unknown): ExtensionDescriptor {
     : ({ ...base, kind } as ExtensionDescriptor);
 }
 
-function canonical(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  return `{${Object.entries(value as Readonly<Record<string, unknown>>)
-    .sort(([left], [right]) => (left === right ? 0 : left < right ? -1 : 1))
-    .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
-    .join(",")}}`;
-}
-
 export function parseSignedExtensionManifest(source: string): SignedExtensionManifest {
   if (new TextEncoder().encode(source).byteLength > MAX_MANIFEST_BYTES) {
     throw new RangeError(`Extension manifest exceeds ${MAX_MANIFEST_BYTES} bytes.`);
@@ -269,8 +260,8 @@ export function parseSignedExtensionManifest(source: string): SignedExtensionMan
   const keyId = text(signature.keyId, "signature.keyId");
   if (!KEY_ID.test(keyId)) throw new TypeError("signature.keyId is invalid.");
   const signatureValue = text(signature.value, "signature.value");
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(signatureValue)) {
-    throw new TypeError("signature.value must be base64.");
+  if (!/^[A-Za-z0-9+/]{86}==$/.test(signatureValue)) {
+    throw new TypeError("signature.value must be a canonical 64-byte Ed25519 signature.");
   }
 
   return {
@@ -288,7 +279,7 @@ export function parseSignedExtensionManifest(source: string): SignedExtensionMan
 }
 
 export function manifestSigningPayload(manifest: SignedExtensionManifest): string {
-  return canonical({
+  return canonicalJson({
     schemaVersion: manifest.schemaVersion,
     extension: manifest.extension,
     package: manifest.package,

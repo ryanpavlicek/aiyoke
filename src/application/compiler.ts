@@ -2,6 +2,7 @@ import {
   AiyokeError,
   type ArtifactIntent,
   aggregateHarnessStack,
+  canonicalJson,
   compareCodePoints,
   type HarnessModule,
   type HarnessPlan,
@@ -230,7 +231,7 @@ export class HarnessCompiler {
       content: JSON.stringify(
         {
           schemaVersion: 1,
-          specDigest: this.hash.digest(JSON.stringify(spec)),
+          specDigest: this.hash.digest(canonicalJson(spec)),
           artifacts: manifestArtifacts
         },
         undefined,
@@ -356,7 +357,7 @@ export class HarnessCompiler {
     }
 
     const operations: PlanOperation[] = [];
-    for (const path of [...byPath.keys()].sort()) {
+    for (const path of [...byPath.keys()].sort(compareCodePoints)) {
       const intents = byPath.get(path);
       if (intents === undefined || intents.length === 0) continue;
       const first = intents[0];

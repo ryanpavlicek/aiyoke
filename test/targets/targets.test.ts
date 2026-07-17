@@ -272,6 +272,45 @@ describe("target renderers", () => {
     expect(responseArtifact?.content).toContain('"protocol": "responses"');
   });
 
+  it("validates every OpenRouter routing variant and protocol override", async () => {
+    const targets = [
+      {
+        kind: "inference-gateway",
+        adapter: extensionId("openrouter"),
+        routing: { kind: "fixed", model: "  " },
+        settings: { protocol: "legacy" }
+      },
+      {
+        kind: "inference-gateway",
+        adapter: extensionId("openrouter"),
+        routing: { kind: "fallback", models: [] },
+        settings: {}
+      },
+      {
+        kind: "inference-gateway",
+        adapter: extensionId("openrouter"),
+        routing: { kind: "fallback", models: ["valid/model", " "] },
+        settings: {}
+      },
+      {
+        kind: "inference-gateway",
+        adapter: extensionId("openrouter"),
+        routing: { kind: "capability", requiredParameters: [], providerOrder: [] },
+        settings: {}
+      }
+    ] as unknown as readonly TargetSpec[];
+    const findings = await Promise.all(
+      targets.map((target) => openRouterTarget.verify(context(target)))
+    );
+
+    expect(findings.map((result) => result.map((finding) => finding.code))).toEqual([
+      ["INVALID_OPENROUTER_PROTOCOL", "EMPTY_FIXED_ROUTE"],
+      ["EMPTY_FALLBACK_ROUTE"],
+      ["EMPTY_FALLBACK_MODEL"],
+      ["EMPTY_PROVIDER_ORDER"]
+    ]);
+  });
+
   it("never writes an xAI API secret", async () => {
     const target = {
       kind: "api-provider",

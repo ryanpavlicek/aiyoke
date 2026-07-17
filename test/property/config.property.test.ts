@@ -173,6 +173,20 @@ const specArbitrary = fc
   );
 
 describe("configuration properties", () => {
+  it("contains arbitrary bounded YAML as either a valid spec or a structured error", () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 16_384 }), (source) => {
+        try {
+          const parsed = parseHarnessSpec(source);
+          expect(parseHarnessSpec(stringifyHarnessSpec(parsed))).toEqual(parsed);
+        } catch (error) {
+          expect(error).toBeInstanceOf(Error);
+        }
+      }),
+      { numRuns: 500 }
+    );
+  });
+
   it("round-trips valid discriminated specifications deterministically", () => {
     fc.assert(
       fc.property(specArbitrary, (spec) => {

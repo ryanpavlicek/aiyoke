@@ -1,4 +1,4 @@
-import { parse, stringify } from "yaml";
+import { parseDocument, stringify } from "yaml";
 import type { SchemaDocument } from "../../application/index.js";
 import {
   type AgentFeature,
@@ -684,8 +684,8 @@ function parseYaml(source: string): unknown {
   }
   let value: unknown;
   try {
-    value = parse(source, {
-      maxAliasCount: 0,
+    const document = parseDocument(source, {
+      logLevel: "error",
       merge: false,
       schema: "core",
       strict: true,
@@ -693,6 +693,9 @@ function parseYaml(source: string): unknown {
       uniqueKeys: true,
       version: "1.2"
     });
+    const issue = document.errors[0] ?? document.warnings[0];
+    if (issue !== undefined) throw issue;
+    value = document.toJS({ maxAliasCount: 0 });
   } catch (error) {
     throw new AiyokeError("INVALID_SPEC", "aiyoke.yaml is not valid YAML.", {
       cause: error instanceof Error ? error.message : String(error)

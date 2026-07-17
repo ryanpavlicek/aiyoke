@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { stringify } from "yaml";
 import { defaultHarnessSpec, parseHarnessSpec } from "../../src/infrastructure/config/index.js";
 
@@ -27,6 +27,17 @@ generation:
       "schemaVersion: 3\nschemaVersion: 3"
     );
     expect(() => parseHarnessSpec(duplicate)).toThrow(/valid YAML/);
+  });
+
+  it("contains YAML parser warnings as structured errors without host warning leakage", () => {
+    const emitWarning = vi.spyOn(process, "emitWarning");
+    try {
+      const warned = `%not-a-supported-directive\n---\n${stringify(defaultHarnessSpec("example"))}`;
+      expect(() => parseHarnessSpec(warned)).toThrow(/valid YAML/);
+      expect(emitWarning).not.toHaveBeenCalled();
+    } finally {
+      emitWarning.mockRestore();
+    }
   });
 
   it("rejects unknown fields at every structural boundary", () => {

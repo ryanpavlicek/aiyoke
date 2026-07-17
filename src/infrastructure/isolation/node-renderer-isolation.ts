@@ -2,7 +2,12 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { type ArtifactIntent, compareCodePoints, safeRelativePath } from "../../core/index.js";
+import {
+  type ArtifactIntent,
+  canonicalJson,
+  compareCodePoints,
+  safeRelativePath
+} from "../../core/index.js";
 import {
   type AiyokeExtension,
   type ExtensionLoader,
@@ -106,15 +111,6 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[]): voi
   }
 }
 
-function canonical(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  return `{${Object.entries(value as Readonly<Record<string, unknown>>)
-    .sort(([left], [right]) => compareCodePoints(left, right))
-    .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
-    .join(",")}}`;
-}
-
 function validateArtifacts(value: unknown, maxArtifacts: number): readonly ArtifactIntent[] {
   if (!Array.isArray(value) || value.length > maxArtifacts) {
     throw new RangeError("Renderer returned an invalid artifact count.");
@@ -151,9 +147,15 @@ function validateArtifacts(value: unknown, maxArtifacts: number): readonly Artif
       if (
         typeof markers.start !== "string" ||
         markers.start.length === 0 ||
+        markers.start.includes("\n") ||
+        markers.start.includes("\r") ||
         typeof markers.end !== "string" ||
         markers.end.length === 0 ||
-        markers.start === markers.end
+        markers.end.includes("\n") ||
+        markers.end.includes("\r") ||
+        markers.start === markers.end ||
+        artifact.content.includes(markers.start) ||
+        artifact.content.includes(markers.end)
       ) {
         throw new TypeError("Renderer returned invalid managed-section markers.");
       }
@@ -308,11 +310,14 @@ async function runRendererChild(): Promise<void> {
       url.searchParams.set("aiyoke-isolated-content", digest);
       const module = (await import(url.href)) as Readonly<Record<string, unknown>>;
       const loader = module[request.exportName];
-      if (!isLoader(loader) || canonical(loader.descriptor) !== canonical(request.descriptor)) {
+      if (
+        !isLoader(loader) ||
+        canonicalJson(loader.descriptor) !== canonicalJson(request.descriptor)
+      ) {
         throw new TypeError("Loader does not match the signed descriptor.");
       }
       const extension: AiyokeExtension = await loader.load();
-      if (canonical(extension.descriptor) !== canonical(request.descriptor)) {
+      if (canonicalJson(extension.descriptor) !== canonicalJson(request.descriptor)) {
         throw new TypeError("Extension does not match the signed descriptor.");
       }
       const workspace = reconstructedWorkspace(request.invocation.context.workspace);

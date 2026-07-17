@@ -327,4 +327,75 @@ describe("isolated signed renderers", () => {
       expect.objectContaining({ kind: "rejected", reason: "isolation-failed" })
     );
   }, 15_000);
+
+  it("contains renderer exceptions and malformed artifact variants", async () => {
+    const bodies = [
+      `throw new Error("renderer failure");`,
+      `return null;`,
+      `return [
+        { path: "same/file.md", content: "one", source: "isolated-target", executable: false, ownership: "generated" },
+        { path: "same\\\\file.md", content: "two", source: "isolated-target", executable: false, ownership: "generated" }
+      ];`,
+      `return [{ path: "extra.md", content: "bad", source: "isolated-target", executable: false, ownership: "generated", unexpected: true }];`,
+      `return [{
+        path: "managed.md",
+        content: "managed",
+        source: "isolated-target",
+        executable: false,
+        ownership: "managed-section",
+        markers: { start: "start\\ncontinued", end: "end" }
+      }];`
+    ];
+
+    for (const body of bodies) {
+      expect(await render(body)).toEqual(
+        expect.objectContaining({ kind: "rejected", reason: "isolation-failed" })
+      );
+    }
+  }, 30_000);
+
+  it("rejects inconsistent and over-count workspace snapshots before spawning", async () => {
+    const fixture = await signedRenderer(`return [];`);
+    const base = invocation();
+    const inconsistent = await renderSignedExtensionIsolated({
+      ...fixture,
+      consent: { kind: "granted", manifestDigest: fixture.manifestDigest },
+      invocation: {
+        ...base,
+        context: {
+          ...base.context,
+          workspace: { ...base.context.workspace, read: async () => undefined }
+        }
+      }
+    });
+    const overCount = await renderSignedExtensionIsolated({
+      ...fixture,
+      consent: { kind: "granted", manifestDigest: fixture.manifestDigest },
+      invocation: {
+        ...base,
+        context: {
+          ...base.context,
+          workspace: { ...base.context.workspace, files: ["one", "two"] }
+        }
+      },
+      limits: { maxWorkspaceFiles: 1 }
+    });
+
+    expect(inconsistent).toEqual(
+      expect.objectContaining({ kind: "rejected", reason: "isolation-input-limit" })
+    );
+    expect(overCount).toEqual(
+      expect.objectContaining({ kind: "rejected", reason: "isolation-input-limit" })
+    );
+  });
+
+  it("contains excessive child diagnostics as a protocol violation", async () => {
+    const result = await render(`
+      console.error("x".repeat(70 * 1024));
+      await new Promise(() => {});
+    `);
+    expect(result).toEqual(
+      expect.objectContaining({ kind: "rejected", reason: "isolation-protocol" })
+    );
+  }, 15_000);
 });

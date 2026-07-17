@@ -5,10 +5,31 @@ All notable changes to this project are documented here. The project follows
 
 ## Unreleased
 
+## 0.3.2 — 2026-07-16
+
+### Changed
+
+- Pin direct dependencies, package-manager and native-toolchain versions, and
+  every third-party GitHub Action to immutable releases or commit SHAs.
+- Validate the exact npm tarball with publint and Are the Types Wrong in addition
+  to content, install, import, and CLI smoke checks.
+- Apply source-wide coverage thresholds and expand adversarial, correctness,
+  property, native-client, native-runtime, and real-framework validation.
+- Support Windows GNU and LLVM Rust validation without requiring a system-wide
+  Visual Studio linker.
+
 ### Fixed
 
 - Retry post-publish npm registry verification so normal propagation delay does
   not prevent creation of the already-published version's GitHub release.
+- Canonicalize JSON and code-point ordering for deterministic plans, digests,
+  registries, artifacts, and extension compatibility reports.
+- Reject bounded-discovery directory floods, malformed Ed25519 signatures,
+  substituted extension descriptors, hostile or cyclic renderer output,
+  malformed managed markers, and invalid compatibility findings.
+- Reject duplicate and command-inapplicable CLI options instead of silently
+  ignoring them, and contain YAML parser warnings as structured validation
+  failures.
 
 ## 0.3.1 — 2026-07-16
 

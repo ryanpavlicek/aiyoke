@@ -157,6 +157,45 @@ function parseArguments(args: readonly string[]): CliOptions {
     else throw new AiyokeError("INVALID_SPEC", `Unexpected argument ${argument}.`);
   }
 
+  const normalizedOptions = args
+    .filter((argument) => argument.startsWith("-"))
+    .map((argument) => (argument === "-h" ? "--help" : argument));
+  if (new Set(normalizedOptions).size !== normalizedOptions.length) {
+    throw new AiyokeError("INVALID_SPEC", "CLI options cannot be repeated.");
+  }
+  const common = ["--root", "--json", "--help"];
+  const commandOptions: Readonly<Record<string, readonly string[]>> = {
+    help: common,
+    init: [...common, "--force", "--languages", "--frameworks", "--targets"],
+    plan: common,
+    apply: common,
+    check: common,
+    doctor: common,
+    detect: common,
+    list: common,
+    config: [
+      ...common,
+      "--dry-run",
+      "--interactive",
+      "--name",
+      "--architecture",
+      "--languages",
+      "--frameworks",
+      "--targets",
+      "--packs"
+    ],
+    migrate: [...common, "--dry-run", "--allow-downgrade", "--to"],
+    rollback: [...common, "--dry-run", "--backup"]
+  };
+  const allowed = new Set(commandOptions[command] ?? common);
+  const unsupported = normalizedOptions.filter((option) => !allowed.has(option));
+  if (unsupported.length > 0) {
+    throw new AiyokeError(
+      "INVALID_SPEC",
+      `${unsupported.join(", ")} ${unsupported.length === 1 ? "is" : "are"} not valid for ${command}.`
+    );
+  }
+
   const optional = {
     ...(languages === undefined ? {} : { languages }),
     ...(frameworks === undefined ? {} : { frameworks }),

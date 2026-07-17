@@ -18,27 +18,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out exact tag
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Set up pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 11.7.0
       - name: Set up Node.js without release cache
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24.x"
           package-manager-cache: false
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.14"
+          python-version: "3.14.6"
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.26.5"
           cache: false
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: "1.97.1"
+          components: rustfmt
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
       - name: Match tag, package, repository, and changelog
@@ -62,13 +65,13 @@ jobs:
       attestations: write
     steps:
       - name: Check out exact tag
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Set up pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 11.7.0
       - name: Set up Node.js without release cache
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24.x"
           registry-url: https://registry.npmjs.org
@@ -89,7 +92,7 @@ jobs:
       - name: Create SHA-256 checksum
         run: node scripts/release-checksum.mjs create "release/aiyoke-${GITHUB_REF_NAME#v}.tgz"
       - name: Generate SPDX JSON SBOM for the tarball
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           file: release/aiyoke-${{ steps.version.outputs.version }}.tgz
           format: spdx-json
@@ -97,16 +100,16 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
       - name: Attest build provenance
-        uses: actions/attest@v4
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
           subject-path: release/aiyoke-${{ steps.version.outputs.version }}.tgz
       - name: Attest SBOM
-        uses: actions/attest@v4
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
           subject-path: release/aiyoke-${{ steps.version.outputs.version }}.tgz
           sbom-path: release/aiyoke-${{ steps.version.outputs.version }}.spdx.json
       - name: Upload immutable release bundle
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: npm-release-${{ github.ref_name }}
           path: release/*
@@ -123,15 +126,15 @@ jobs:
       id-token: write
     steps:
       - name: Check out exact tag
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Set up Node.js for npm trusted publishing
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24.x"
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - name: Download exact attested release bundle
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: npm-release-${{ github.ref_name }}
           path: release

@@ -43,9 +43,10 @@ public package built from this public repository.
 2. Set the exact semantic version in `package.json`. Move relevant entries from
    `Unreleased` to a matching `## X.Y.Z` changelog heading and update compatibility
    or migration notes.
-3. Run `node scripts/verify-release-version.mjs vX.Y.Z`. Review `npm pack
-   --dry-run` and confirm no credential, `.env`, root `AGENTS.md`, source fixture,
-   or build cache is included.
+3. Run `node scripts/verify-release-version.mjs vX.Y.Z`. `pnpm test:package`
+   independently runs publint and ESM type-resolution checks against the exact
+   tarball. Review `npm pack --dry-run` and confirm no credential, `.env`, root
+   `AGENTS.md`, source fixture, or build cache is included.
 4. Merge the release preparation commit only after the complete CI workflow is
    green. Create and push a signed or otherwise protected `vX.Y.Z` tag at that
    exact commit. Never move or reuse a release tag.

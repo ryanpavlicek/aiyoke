@@ -2,7 +2,7 @@ import { createHash, createPublicKey, verify } from "node:crypto";
 import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { compareCodePoints, safeRelativePath } from "../../core/index.js";
+import { canonicalJson, compareCodePoints, safeRelativePath } from "../../core/index.js";
 import {
   type ExtensionLoader,
   type ManifestCryptoPort,
@@ -72,6 +72,7 @@ async function packageEntries(
   const root = await realpath(requestedRoot);
   const entries: PackageEntry[] = [];
   let bytes = 0;
+  let directories = 0;
   const visit = async (directory: string): Promise<void> => {
     const children = (await readdir(directory, { withFileTypes: true })).sort((left, right) =>
       compareCodePoints(left.name, right.name)
@@ -83,6 +84,10 @@ async function packageEntries(
       if (child.isSymbolicLink())
         throw new TypeError(`Extension package contains a symlink: ${path}`);
       if (child.isDirectory()) {
+        directories += 1;
+        if (directories > maxFiles) {
+          throw new RangeError("Extension package has too many directories.");
+        }
         await visit(absolute);
         continue;
       }
@@ -110,15 +115,6 @@ function contentDigest(entries: readonly PackageEntry[]): string {
     hash.update("\0");
   }
   return `sha256:${hash.digest("hex")}`;
-}
-
-function canonical(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  return `{${Object.entries(value as Readonly<Record<string, unknown>>)
-    .sort(([left], [right]) => compareCodePoints(left, right))
-    .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
-    .join(",")}}`;
 }
 
 function isLoader(value: unknown): value is ExtensionLoader {
@@ -222,7 +218,7 @@ export async function discoverSignedExtension(
     const loader = loaded[verification.manifest.package.exportName];
     if (
       !isLoader(loader) ||
-      canonical(loader.descriptor) !== canonical(verification.manifest.extension)
+      canonicalJson(loader.descriptor) !== canonicalJson(verification.manifest.extension)
     ) {
       throw new TypeError("Module export does not match the signed extension descriptor.");
     }

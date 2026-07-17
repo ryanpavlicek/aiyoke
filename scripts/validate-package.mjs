@@ -36,6 +36,17 @@ function command(name) {
   return process.platform === "win32" ? `${name}.cmd` : name;
 }
 
+async function packageBinary(packageName) {
+  const manifestPath = path.join(root, "node_modules", ...packageName.split("/"), "package.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const relativeBinary =
+    typeof manifest.bin === "string" ? manifest.bin : Object.values(manifest.bin ?? {})[0];
+  if (typeof relativeBinary !== "string") {
+    throw new Error(`${packageName} does not expose a package binary.`);
+  }
+  return path.resolve(path.dirname(manifestPath), relativeBinary);
+}
+
 async function runPackageManager(manager, arguments_, options = {}) {
   const candidates = [
     process.env.npm_execpath,
@@ -185,13 +196,20 @@ async function installSmoke(archivePath, installer) {
 
 async function validateAndInstall(archivePath) {
   const validation = validateArchive(archivePath, await readFile(archivePath));
+  await run(process.execPath, [await packageBinary("publint"), archivePath, "--strict"]);
+  await run(process.execPath, [
+    await packageBinary("@arethetypeswrong/cli"),
+    archivePath,
+    "--profile",
+    "esm-only"
+  ]);
   const installer = process.env.AIYOKE_PACKAGE_INSTALLER ?? "npm";
   if (!new Set(["npm", "pnpm"]).has(installer)) {
     throw new Error("AIYOKE_PACKAGE_INSTALLER must be npm or pnpm.");
   }
   await installSmoke(archivePath, installer);
   console.log(
-    `Package ${validation.packageJson.version} passed ${validation.entryCount} content checks and ${installer} install smoke.`
+    `Package ${validation.packageJson.version} passed ${validation.entryCount} content checks, publint, type-resolution lint, and ${installer} install smoke.`
   );
 }
 

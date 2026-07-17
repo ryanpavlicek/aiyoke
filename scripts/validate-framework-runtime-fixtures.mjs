@@ -30,6 +30,24 @@ function runPnpm(args, options) {
   run("pnpm", args, options);
 }
 
+function rustBuildEnvironment() {
+  if (process.platform !== "win32") return {};
+  const result = spawnSync("rustc", ["--version", "--verbose"], {
+    encoding: "utf8",
+    env: process.env,
+    shell: false
+  });
+  if (result.error !== undefined) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`rustc --version --verbose failed (${result.status}).\n${result.stderr}`);
+  }
+  if (!/^host: .*windows-gnu$/mu.test(result.stdout)) return {};
+  const existing = process.env.RUSTFLAGS?.trim();
+  return {
+    RUSTFLAGS: [existing, "-C link-self-contained=yes"].filter(Boolean).join(" ")
+  };
+}
+
 async function generate(root, name, language, frameworks) {
   const fixture = join(root, name);
   await mkdir(fixture, { recursive: true });
@@ -185,7 +203,13 @@ require (
     join(go, "framework_behavior_test.go")
   ]);
   run("go", ["mod", "tidy"], { cwd: go });
-  run("go", ["test", "./..."], { cwd: go });
+  if (process.platform === "win32") {
+    const goTestBinary = join(go, "aiyoke-go-framework-tests.exe");
+    run("go", ["test", "-c", "-o", goTestBinary, "."], { cwd: go });
+    run(goTestBinary, [], { cwd: go });
+  } else {
+    run("go", ["test", "./..."], { cwd: go });
+  }
 
   await writeFile(
     join(rust, "Cargo.toml"),
@@ -224,7 +248,10 @@ pub mod runtime;
   );
   run("cargo", ["generate-lockfile"], { cwd: rust });
   run("cargo", ["fmt", "--check"], { cwd: rust });
-  run("cargo", ["test", "--lib", "--locked"], { cwd: rust });
+  run("cargo", ["test", "--lib", "--locked"], {
+    cwd: rust,
+    env: rustBuildEnvironment()
+  });
 
   process.stdout.write(
     "All generated framework runtime adapters passed real dependency and request-behavior checks.\n"
@@ -245,5 +272,5 @@ if (process.env.AIYOKE_KEEP_FRAMEWORK_FIXTURE === "1") {
   if (!basename(resolved).startsWith("aiyoke-framework-validation-")) {
     throw new Error(`Refusing to remove unexpected framework fixture ${resolved}.`);
   }
-  await rm(resolved, { recursive: true, force: true });
+  await rm(resolved, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

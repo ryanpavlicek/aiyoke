@@ -229,6 +229,9 @@ describe("CLI initialization", () => {
     ["missing backup path", ["rollback", "--backup"]],
     ["unknown option", ["init", "--unknown"]],
     ["unexpected argument", ["plan", "extra"]],
+    ["ignored init option", ["init", "--packs", "engineering"]],
+    ["ignored plan option", ["plan", "--force"]],
+    ["duplicate option", ["plan", "--root", "one", "--root", "two"]],
     ["unknown command", ["unknown-command"]]
   ])("returns failure for %s", async (_name, args) => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);

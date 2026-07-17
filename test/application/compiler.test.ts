@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { HarnessCompiler, type HashPort, type WorkspacePort } from "../../src/application/index.js";
 import {
@@ -64,11 +65,16 @@ interface FakeTargetOptions {
   readonly conflicting?: boolean;
   readonly ownership?: ArtifactOwnership;
   readonly path?: string;
+  readonly paths?: readonly string[];
   readonly surface?: TargetSpec["kind"];
   readonly verificationWarning?: boolean;
 }
 
-function compiler(workspace: MemoryWorkspace, options: FakeTargetOptions = {}): HarnessCompiler {
+function compiler(
+  workspace: MemoryWorkspace,
+  options: FakeTargetOptions = {},
+  hashPort: HashPort = hash
+): HarnessCompiler {
   const descriptor = {
     kind: "target" as const,
     id: extensionId("fake"),
@@ -84,26 +90,24 @@ function compiler(workspace: MemoryWorkspace, options: FakeTargetOptions = {}): 
     descriptor,
     surface: options.surface ?? "coding-agent",
     async render() {
-      const base = {
-        path: options.path ?? "AGENT.md",
-        content: "generated\r\n",
-        source: "fake",
-        executable: false
-      };
-      const first: ArtifactIntent =
-        options.ownership === "managed-section"
-          ? {
+      const artifacts = (options.paths ?? [options.path ?? "AGENT.md"]).map((path) => {
+        const base = { path, content: "generated\r\n", source: "fake", executable: false };
+        return options.ownership === "managed-section"
+          ? ({
               ...base,
               ownership: "managed-section",
               markers: {
                 start: "<!-- aiyoke:managed:start -->",
                 end: "<!-- aiyoke:managed:end -->"
               }
-            }
-          : { ...base, ownership: options.ownership ?? "generated" };
+            } satisfies ArtifactIntent)
+          : ({ ...base, ownership: options.ownership ?? "generated" } satisfies ArtifactIntent);
+      });
+      const first = artifacts[0];
+      if (first === undefined) return [];
       return options.conflicting
-        ? [first, { ...first, content: "different", source: "other" }]
-        : [first];
+        ? [...artifacts, { ...first, content: "different", source: "other" }]
+        : artifacts;
     },
     async verify() {
       return options.verificationWarning
@@ -114,7 +118,7 @@ function compiler(workspace: MemoryWorkspace, options: FakeTargetOptions = {}): 
   const registry = new ExtensionRegistry()
     .registerTarget({ descriptor, load: async () => target })
     .freeze();
-  return new HarnessCompiler(registry, workspace, hash);
+  return new HarnessCompiler(registry, workspace, hashPort);
 }
 
 describe("HarnessCompiler", () => {
@@ -133,6 +137,64 @@ describe("HarnessCompiler", () => {
     expect(second.operations.every((operation) => operation.kind === "unchanged")).toBe(true);
     expect((await harness.apply(second)).changedPaths).toEqual([]);
     expect(workspace.writes).toBe(2);
+  });
+
+  it("hashes semantically identical specifications canonically", async () => {
+    const sha256: HashPort = {
+      digest: (value) => createHash("sha256").update(value).digest("hex")
+    };
+    const left = spec();
+    const right = spec();
+    const leftTarget = left.targets[0];
+    const rightTarget = right.targets[0];
+    if (leftTarget === undefined || rightTarget === undefined)
+      throw new Error("Missing fixture target.");
+    const leftSpec: HarnessSpec = {
+      ...left,
+      targets: [
+        {
+          ...leftTarget,
+          settings: { nested: { z: 1, a: 2 }, "\u{10000}": "astral", "\uE000": "bmp" }
+        }
+      ]
+    };
+    const rightSpec: HarnessSpec = {
+      ...right,
+      targets: [
+        {
+          ...rightTarget,
+          settings: { "\uE000": "bmp", "\u{10000}": "astral", nested: { a: 2, z: 1 } }
+        }
+      ]
+    };
+
+    const leftPlan = await compiler(new MemoryWorkspace(), {}, sha256).plan(leftSpec);
+    const rightPlan = await compiler(new MemoryWorkspace(), {}, sha256).plan(rightSpec);
+    const lockContent = (plan: typeof leftPlan) => {
+      const lock = plan.operations.find(
+        (operation) =>
+          operation.kind !== "conflict" && operation.artifact.path === ".aiyoke/lock.json"
+      );
+      if (lock === undefined || lock.kind === "conflict") throw new Error("Missing lock artifact.");
+      return JSON.parse(lock.artifact.content) as { readonly specDigest: string };
+    };
+
+    expect(lockContent(leftPlan).specDigest).toBe(lockContent(rightPlan).specDigest);
+    expect(leftPlan.fingerprint).toBe(rightPlan.fingerprint);
+  });
+
+  it("orders generated paths by Unicode code point", async () => {
+    const privateUse = "\uE000.md";
+    const astral = "\u{10000}.md";
+    const plan = await compiler(new MemoryWorkspace(), { paths: [astral, privateUse] }).plan(
+      spec()
+    );
+
+    expect(
+      plan.operations.map((operation) =>
+        operation.kind === "conflict" ? operation.path : operation.artifact.path
+      )
+    ).toEqual([".aiyoke/lock.json", privateUse, astral]);
   });
 
   it("turns incompatible extension output into a plan conflict", async () => {

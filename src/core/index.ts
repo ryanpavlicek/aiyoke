@@ -1,7 +1,7 @@
 export { compareCodePoints } from "./compare.js";
 export { AiyokeError, type AiyokeErrorCode } from "./error.js";
 export { type ExtensionId, extensionId, safeRelativePath } from "./identity.js";
-export type { JsonObject, JsonPrimitive, JsonValue } from "./json.js";
+export { canonicalJson, type JsonObject, type JsonPrimitive, type JsonValue } from "./json.js";
 export {
   type AgentFeature,
   type ApiProviderTarget,

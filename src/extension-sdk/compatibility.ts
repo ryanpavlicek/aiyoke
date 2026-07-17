@@ -1,5 +1,7 @@
 import {
   type ArtifactIntent,
+  canonicalJson,
+  compareCodePoints,
   type HarnessModule,
   type HarnessSpec,
   safeRelativePath,
@@ -83,15 +85,6 @@ type CompatibilityOutput =
     }
   | { readonly kind: "runtime"; readonly artifacts: readonly ArtifactIntent[] };
 
-function canonical(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  return `{${Object.entries(value as Readonly<Record<string, unknown>>)
-    .sort(([left], [right]) => (left === right ? 0 : left < right ? -1 : 1))
-    .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
-    .join(",")}}`;
-}
-
 function redact(message: string, canaries: readonly string[]): string {
   return canaries.reduce(
     (safe, canary) => (canary.length === 0 ? safe : safe.split(canary).join("[REDACTED]")),
@@ -104,10 +97,18 @@ function errorMessage(error: unknown, canaries: readonly string[]): string {
 }
 
 function snapshot(files: Readonly<Record<string, string>>): WorkspaceSnapshot {
-  const entries = new Map(Object.entries(files));
+  const entries = new Map<string, string>();
+  for (const [path, content] of Object.entries(files)) {
+    const normalized = safeRelativePath(path);
+    if (normalized !== path) {
+      throw new TypeError(`Fixture path must already be normalized: ${path}`);
+    }
+    if (entries.has(normalized)) throw new TypeError(`Fixture path is duplicated: ${path}`);
+    entries.set(normalized, content);
+  }
   return Object.freeze({
     root: "/compatibility-fixture",
-    files: Object.freeze([...entries.keys()].sort()),
+    files: Object.freeze([...entries.keys()].sort(compareCodePoints)),
     async read(path: string) {
       return entries.get(path);
     },
@@ -119,6 +120,115 @@ function snapshot(files: Readonly<Record<string, string>>): WorkspaceSnapshot {
 
 function artifacts(output: CompatibilityOutput): readonly ArtifactIntent[] {
   return output.kind === "module" ? [] : output.artifacts;
+}
+
+function object(value: unknown, label: string): Readonly<Record<string, unknown>> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object.`);
+  }
+  return value as Readonly<Record<string, unknown>>;
+}
+
+function exactKeys(
+  value: Readonly<Record<string, unknown>>,
+  expectedKeys: readonly string[],
+  label: string
+): void {
+  const expected = new Set(expectedKeys);
+  if (
+    Object.keys(value).length !== expected.size ||
+    Object.keys(value).some((key) => !expected.has(key))
+  ) {
+    throw new TypeError(`${label} has unsupported or missing fields.`);
+  }
+}
+
+function validateArtifact(value: unknown): ArtifactIntent {
+  const artifact = object(value, "Artifact");
+  const ownership = artifact.ownership;
+  exactKeys(
+    artifact,
+    ownership === "managed-section"
+      ? ["path", "content", "source", "executable", "ownership", "markers"]
+      : ["path", "content", "source", "executable", "ownership"],
+    "Artifact"
+  );
+  if (
+    typeof artifact.path !== "string" ||
+    typeof artifact.content !== "string" ||
+    typeof artifact.source !== "string" ||
+    artifact.source.trim().length === 0 ||
+    typeof artifact.executable !== "boolean" ||
+    !["generated", "managed-section", "user-owned"].includes(String(ownership))
+  ) {
+    throw new TypeError("Artifact fields are invalid.");
+  }
+  const path = safeRelativePath(artifact.path);
+  if (path !== artifact.path.replaceAll("\\", "/")) {
+    throw new TypeError(`Artifact path must already be normalized: ${artifact.path}`);
+  }
+  if (artifact.content.includes("\r")) {
+    throw new TypeError(`Artifact must use LF line endings: ${path}`);
+  }
+  const base = {
+    path,
+    content: artifact.content,
+    source: artifact.source,
+    executable: artifact.executable
+  };
+  if (ownership !== "managed-section") return { ...base, ownership } as ArtifactIntent;
+
+  const markers = object(artifact.markers, "Managed-section markers");
+  exactKeys(markers, ["start", "end"], "Managed-section markers");
+  if (
+    typeof markers.start !== "string" ||
+    markers.start.length === 0 ||
+    markers.start.includes("\n") ||
+    markers.start.includes("\r") ||
+    typeof markers.end !== "string" ||
+    markers.end.length === 0 ||
+    markers.end.includes("\n") ||
+    markers.end.includes("\r") ||
+    markers.start === markers.end ||
+    artifact.content.includes(markers.start) ||
+    artifact.content.includes(markers.end)
+  ) {
+    throw new TypeError("Managed-section markers are invalid.");
+  }
+  return { ...base, ownership, markers: { start: markers.start, end: markers.end } };
+}
+
+function validateVerification(value: unknown): void {
+  if (!Array.isArray(value)) throw new TypeError("Target verification must be an array.");
+  for (const candidate of value) {
+    const finding = object(candidate, "Verification finding");
+    exactKeys(
+      finding,
+      [
+        "severity",
+        "code",
+        "message",
+        ...(finding.path === undefined ? [] : ["path"]),
+        ...(finding.target === undefined ? [] : ["target"])
+      ],
+      "Verification finding"
+    );
+    if (
+      !["info", "warning", "error"].includes(String(finding.severity)) ||
+      typeof finding.code !== "string" ||
+      finding.code.trim().length === 0 ||
+      typeof finding.message !== "string" ||
+      finding.message.trim().length === 0 ||
+      (finding.target !== undefined && typeof finding.target !== "string")
+    ) {
+      throw new TypeError("Verification finding fields are invalid.");
+    }
+    if (finding.path !== undefined) {
+      if (typeof finding.path !== "string" || safeRelativePath(finding.path) !== finding.path) {
+        throw new TypeError("Verification finding path is invalid.");
+      }
+    }
+  }
 }
 
 async function execute(
@@ -202,7 +312,7 @@ function validateDescriptor(loader: ExtensionLoader): void {
 }
 
 function validateOutput(output: CompatibilityOutput, maxOutputBytes: number): void {
-  const encoded = new TextEncoder().encode(canonical(output));
+  const encoded = new TextEncoder().encode(canonicalJson(output));
   if (encoded.byteLength > maxOutputBytes) {
     throw new RangeError(`Extension output exceeded ${maxOutputBytes} bytes.`);
   }
@@ -216,17 +326,13 @@ function validateOutput(output: CompatibilityOutput, maxOutputBytes: number): vo
     }
   }
   const paths = new Set<string>();
-  for (const artifact of artifacts(output)) {
-    const path = safeRelativePath(artifact.path);
-    if (path !== artifact.path.replaceAll("\\", "/")) {
-      throw new TypeError(`Artifact path must already be normalized: ${artifact.path}`);
-    }
+  for (const candidate of artifacts(output)) {
+    const artifact = validateArtifact(candidate);
+    const path = artifact.path;
     if (paths.has(path)) throw new TypeError(`Artifact path is duplicated: ${path}`);
     paths.add(path);
-    if (artifact.content.includes("\r")) {
-      throw new TypeError(`Artifact must use LF line endings: ${path}`);
-    }
   }
+  if (output.kind === "target") validateVerification(output.verification);
 }
 
 export async function runExtensionCompatibility(
@@ -262,7 +368,7 @@ export async function runExtensionCompatibility(
     registry.register(options.loader).freeze();
     pass("dependencies");
     extension = await registry.get(options.loader.descriptor);
-    if (canonical(extension.descriptor) !== canonical(options.loader.descriptor)) {
+    if (canonicalJson(extension.descriptor) !== canonicalJson(options.loader.descriptor)) {
       throw new TypeError("Loaded extension descriptor does not match the loader descriptor.");
     }
     pass("loader-identity");
@@ -276,7 +382,6 @@ export async function runExtensionCompatibility(
   try {
     if (extension === undefined) throw new TypeError("Extension could not be loaded.");
     const files = options.fixture.files ?? {};
-    for (const path of Object.keys(files)) safeRelativePath(path);
     const workspace = snapshot(files);
     first = await execute(extension, options.fixture, workspace);
     second = await execute(extension, options.fixture, workspace);
@@ -290,12 +395,20 @@ export async function runExtensionCompatibility(
   }
 
   if (first !== undefined && second !== undefined) {
-    if (canonical(first) === canonical(second)) pass("determinism");
-    else fail("determinism", "NONDETERMINISTIC_OUTPUT", "Repeated output differs.");
-    const serialized = canonical(first);
-    const leaked = canaries.find((canary) => canary.length > 0 && serialized.includes(canary));
-    if (leaked === undefined) pass("secret-safety");
-    else fail("secret-safety", "SECRET_CANARY_LEAKED", "A secret canary appeared in output.");
+    try {
+      const firstSerialized = canonicalJson(first);
+      const secondSerialized = canonicalJson(second);
+      if (firstSerialized === secondSerialized) pass("determinism");
+      else fail("determinism", "NONDETERMINISTIC_OUTPUT", "Repeated output differs.");
+      const leaked = canaries.find(
+        (canary) => canary.length > 0 && firstSerialized.includes(canary)
+      );
+      if (leaked === undefined) pass("secret-safety");
+      else fail("secret-safety", "SECRET_CANARY_LEAKED", "A secret canary appeared in output.");
+    } catch (error) {
+      fail("determinism", "DETERMINISM_NOT_TESTED", error);
+      fail("secret-safety", "SECRET_SAFETY_NOT_TESTED", error);
+    }
   } else {
     fail("determinism", "DETERMINISM_NOT_TESTED", "Extension execution did not complete.");
     fail("secret-safety", "SECRET_SAFETY_NOT_TESTED", "Extension execution did not complete.");

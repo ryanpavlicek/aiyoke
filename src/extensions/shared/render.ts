@@ -15,7 +15,7 @@ export function stableJson(value: JsonValue, indent = 2): string {
     if (Array.isArray(input)) return input.map((item) => normalize(item));
     if (input !== null && typeof input === "object") {
       const result = Object.create(null) as Record<string, JsonValue>;
-      for (const key of Object.keys(input).sort()) {
+      for (const key of Object.keys(input).sort(compareCodePoints)) {
         result[key] = normalize(input[key] as JsonValue);
       }
       return result;
@@ -39,7 +39,7 @@ export function sanitizeJson(value: JsonValue, parentKey = ""): JsonValue {
   if (Array.isArray(value)) return value.map((item) => sanitizeJson(item, parentKey));
   if (value !== null && typeof value === "object") {
     const result = Object.create(null) as Record<string, JsonValue>;
-    for (const key of Object.keys(value).sort()) {
+    for (const key of Object.keys(value).sort(compareCodePoints)) {
       result[key] = sanitizeJson(value[key] as JsonValue, key);
     }
     return result;

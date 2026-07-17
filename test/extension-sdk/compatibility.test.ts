@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extensionId, type HarnessSpec } from "../../src/core/index.js";
+import { type ArtifactIntent, extensionId, type HarnessSpec } from "../../src/core/index.js";
 import {
   defineLanguage,
   defineTarget,
@@ -188,6 +188,69 @@ describe("extension compatibility kit", () => {
     const report = await runExtensionCompatibility({ loader, fixture: fixture() });
     expect(report.kind).toBe("failed");
     expect(JSON.stringify(report)).toContain("duplicated");
+  });
+
+  it.each([
+    ["non-boolean executable", { executable: "yes" }],
+    ["unknown ownership", { ownership: "borrowed" }],
+    ["blank source", { source: "  " }],
+    ["unsupported fields", { unexpected: true }],
+    [
+      "multiline managed markers",
+      { ownership: "managed-section", markers: { start: "start\ncontinued", end: "end" } }
+    ]
+  ])("fails closed for artifacts with %s", async (_label, overrides) => {
+    const candidate = {
+      path: "generated/result.md",
+      content: "stable\n",
+      source: "compat-target",
+      executable: false,
+      ownership: "generated",
+      ...overrides
+    } as unknown as ArtifactIntent;
+    const report = await runExtensionCompatibility({
+      loader: targetLoader(async () => [candidate]),
+      fixture: fixture()
+    });
+
+    expect(report.kind).toBe("failed");
+    expect(JSON.stringify(report)).toContain("UNSAFE_EXTENSION_OUTPUT");
+  });
+
+  it("returns a structured failure for cyclic hostile output", async () => {
+    const candidate: Record<string, unknown> = {
+      path: "generated/result.md",
+      content: "stable\n",
+      source: "compat-target",
+      executable: false,
+      ownership: "generated"
+    };
+    candidate.self = candidate;
+    const report = await runExtensionCompatibility({
+      loader: targetLoader(async () => [candidate as unknown as ArtifactIntent]),
+      fixture: fixture()
+    });
+
+    expect(report.kind).toBe("failed");
+    if (report.kind === "failed") {
+      expect(report.findings.map((finding) => finding.code)).toEqual(
+        expect.arrayContaining([
+          "UNSAFE_EXTENSION_OUTPUT",
+          "DETERMINISM_NOT_TESTED",
+          "SECRET_SAFETY_NOT_TESTED"
+        ])
+      );
+    }
+  });
+
+  it("rejects noncanonical fixture workspace paths", async () => {
+    const report = await runExtensionCompatibility({
+      loader: targetLoader(async () => []),
+      fixture: { ...fixture(), files: { "nested\\package.json": "{}" } }
+    });
+
+    expect(report.kind).toBe("failed");
+    expect(JSON.stringify(report)).toContain("Fixture path must already be normalized");
   });
 
   it("validates detector confidence and contributed module shape", async () => {

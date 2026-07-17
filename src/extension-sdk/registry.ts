@@ -1,4 +1,4 @@
-import { AiyokeError, compareCodePoints, type ExtensionId } from "../core/index.js";
+import { AiyokeError, canonicalJson, compareCodePoints, type ExtensionId } from "../core/index.js";
 import {
   type AiyokeExtension,
   EXTENSION_API_VERSION,
@@ -120,13 +120,10 @@ export class ExtensionRegistry {
     }
 
     const loaded = loader.load().then((extension) => {
-      if (
-        extension.descriptor.kind !== loader.descriptor.kind ||
-        extension.descriptor.id !== loader.descriptor.id
-      ) {
+      if (canonicalJson(extension.descriptor) !== canonicalJson(loader.descriptor)) {
         throw new AiyokeError(
           "INVALID_SPEC",
-          `Extension loader ${key} returned ${extension.descriptor.kind}:${extension.descriptor.id}.`
+          `Extension loader ${key} returned a different descriptor (${extension.descriptor.kind}:${extension.descriptor.id}).`
         );
       }
       return extension;
@@ -207,6 +204,6 @@ export class ExtensionRegistry {
       visited.add(key);
     };
 
-    for (const key of [...this.#loaders.keys()].sort()) visit(key, []);
+    for (const key of [...this.#loaders.keys()].sort(compareCodePoints)) visit(key, []);
   }
 }

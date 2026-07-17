@@ -183,12 +183,23 @@ describe("signed extension discovery", () => {
     const cases = [
       async () => {
         const fixture = await signedFixture();
+        const signature = Buffer.from(fixture.manifest.signature.value, "base64");
+        signature[0] = (signature[0] ?? 0) ^ 1;
+        const manifest = {
+          ...fixture.manifest,
+          signature: { ...fixture.manifest.signature, value: signature.toString("base64") }
+        };
+        await writeFile(fixture.manifestPath, JSON.stringify(manifest), "utf8");
+        return { fixture, expected: "signature-invalid" };
+      },
+      async () => {
+        const fixture = await signedFixture();
         const manifest = {
           ...fixture.manifest,
           signature: { ...fixture.manifest.signature, value: "AAAA" }
         };
         await writeFile(fixture.manifestPath, JSON.stringify(manifest), "utf8");
-        return { fixture, expected: "signature-invalid" };
+        return { fixture, expected: "manifest-invalid" };
       },
       async () => {
         const fixture = await signedFixture();
@@ -268,6 +279,27 @@ describe("signed extension discovery", () => {
     expect((globalThis as Record<string, unknown>)[importMarker]).toBeUndefined();
   });
 
+  it("bounds empty-directory traversal as well as regular files", async () => {
+    const fixture = await signedFixture();
+    await Promise.all(
+      ["empty-a", "empty-b", "empty-c"].map((path) => mkdir(join(fixture.packageRoot, path)))
+    );
+
+    await expect(digestExtensionPackage(fixture.packageRoot, { maxFiles: 2 })).rejects.toThrow(
+      /too many directories/
+    );
+    expect(
+      await discoverSignedExtension({
+        manifestPath: fixture.manifestPath,
+        packageRoot: fixture.packageRoot,
+        trust: fixture.trust,
+        consent: { kind: "pending" },
+        maxPackageFiles: 2
+      })
+    ).toEqual(expect.objectContaining({ kind: "rejected", reason: "package-invalid" }));
+    expect((globalThis as Record<string, unknown>)[importMarker]).toBeUndefined();
+  });
+
   it("rejects invalid manifests and symlinked package content", async () => {
     const fixture = await signedFixture();
     await writeFile(fixture.manifestPath, "{}", "utf8");
@@ -329,7 +361,7 @@ describe("signed extension discovery", () => {
             exportName: "loader"
           },
           content: { algorithm: "sha256", digest: `sha256:${"0".repeat(64)}` },
-          signature: { algorithm: "ed25519", keyId: "key", value: "AA==" }
+          signature: { algorithm: "ed25519", keyId: "key", value: `${"A".repeat(86)}==` }
         })
       )
     ).toThrow(/extension.version is invalid/);
