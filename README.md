@@ -99,11 +99,23 @@ writes owned artifacts and `.aiyoke/lock.json`. A second unchanged apply reports
 zero writes. Commit the canonical configuration, generated artifacts appropriate
 for your team, and the lock file according to your repository policy.
 
+The executable [Next.js quickstart](examples/quickstart-nextjs/README.md) walks
+through initialization, plan review, the generated tree, idempotent application,
+intentional drift, and recovery from a checked-in starter project.
+
 Use `--root <path>` from a parent directory and `--json` in automation:
 
 ```sh
 npx aiyoke plan --root ./services/api --json
 ```
+
+## Documentation map
+
+Start with the [documentation map](docs/README.md) for audience-specific paths:
+first use, configuration and operations, extension authoring, public API
+integration, architecture, contribution, security, or release maintenance. Every
+document ships in the npm package, and local links and anchors are validated in
+the default quality gate.
 
 ## Canonical configuration
 
@@ -312,6 +324,7 @@ pnpm test:target-clients
 pnpm test:runtimes
 pnpm test:frameworks
 pnpm test:package
+pnpm test:docs:external
 ```
 
 CI separately enforces formatting/types/architecture, Node 22 and 24 on Linux,
@@ -321,6 +334,9 @@ dependency audit, dependency review, generated native runtimes, framework
 adapters, strict target contracts, and pinned Claude/Codex/Grok client probes.
 Direct tool versions and third-party workflow actions are immutable pins; automated
 tests reject floating replacements.
+Local documentation links, anchors, and code fences run in every static gate;
+external URL availability runs through the bounded weekly documentation workflow
+and can be checked locally with `pnpm test:docs:external`.
 Tagged releases build and attest one exact tarball; see [Release
 operations](docs/releasing.md).
 

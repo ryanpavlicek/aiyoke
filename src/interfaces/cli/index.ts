@@ -4,4 +4,4 @@ export {
   createNodeConfigPrompt,
   type InteractiveConfigResult
 } from "./interactive-config.js";
-export { type CliRuntime, runCli } from "./main.js";
+export { CLI_HELP, type CliRuntime, runCli } from "./main.js";

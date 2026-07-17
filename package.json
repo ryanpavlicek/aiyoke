@@ -32,6 +32,8 @@
     "docs",
     "examples",
     "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
     "README.md",
     "SECURITY.md",
     "LICENSE"
@@ -64,6 +66,7 @@
     "test:target-clients": "pnpm build && node scripts/validate-target-client-fixtures.mjs --native",
     "test:isolation-dist": "node scripts/validate-built-extension-isolation.mjs",
     "test:docs": "node scripts/validate-docs.mjs",
+    "test:docs:external": "node --use-system-ca scripts/validate-docs.mjs --external",
     "test:package": "pnpm build && node scripts/validate-package.mjs",
     "security:audit": "pnpm audit --prod --audit-level high",
     "test:live": "pnpm build && node --use-system-ca --env-file-if-exists=.env scripts/live-provider-smoke.mjs",

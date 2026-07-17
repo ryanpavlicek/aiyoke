@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The project follows
 
 ## Unreleased
 
+### Documentation
+
+- Add complete contributor onboarding, a job-oriented documentation map, an
+  executable TypeScript/Next.js first-user lifecycle, exhaustive schema-v3 and
+  public API references, and current security-support guidance.
+- Validate Markdown fences, reference links, local anchors, CLI/help parity, the
+  generated quickstart tree, drift recovery, and bounded external-link
+  availability through local and scheduled checks.
+
 ## 0.3.3 — 2026-07-16
 
 ### Security
