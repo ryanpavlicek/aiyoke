@@ -27,7 +27,6 @@ files.push(
 
 function githubSlug(value) {
   return value
-    .replace(/<[^>]*>/g, "")
     .replace(/`([^`]*)`/g, "$1")
     .replaceAll("&amp;", "&")
     .toLowerCase()
@@ -58,6 +57,10 @@ function markdownStructure(source, relativeFile) {
     visible.push(line);
     const heading = line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/u)?.[1];
     if (heading === undefined) continue;
+    if (/[<>]/u.test(heading)) {
+      failures.push(`${relativeFile}:${index + 1}: raw HTML is not supported in headings`);
+      continue;
+    }
     const base = githubSlug(heading);
     const count = slugCounts.get(base) ?? 0;
     slugCounts.set(base, count + 1);
