@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { access, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,6 +56,9 @@ async function runPackageManager(manager, arguments_, options = {}) {
   const candidates = [
     explicitEntry,
     process.env.npm_execpath,
+    manager === "pnpm" && process.env.PNPM_HOME !== undefined
+      ? path.resolve(process.env.PNPM_HOME, process.platform === "win32" ? "pnpm.cmd" : "pnpm")
+      : undefined,
     path.resolve(
       path.dirname(process.execPath),
       "node_modules",
@@ -80,17 +83,19 @@ async function runPackageManager(manager, arguments_, options = {}) {
       "bin",
       manager === "npm" ? "npm-cli.js" : "pnpm.mjs"
     )
-  ].filter((candidate) => {
-    if (typeof candidate !== "string") return false;
-    const normalized = candidate.replaceAll("\\", "/");
-    return manager === "npm"
-      ? normalized.endsWith("/npm/bin/npm-cli.js")
-      : /\/pnpm\/bin\/pnpm\.(?:c?js|mjs)$/.test(normalized);
-  });
+  ];
   for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
     try {
-      await access(candidate);
-      return run(process.execPath, [candidate, ...arguments_], options);
+      const resolved = await realpath(candidate);
+      const normalized = resolved.replaceAll("\\", "/");
+      const isManagerEntry =
+        manager === "npm"
+          ? normalized.endsWith("/npm/bin/npm-cli.js")
+          : /\/pnpm\/bin\/pnpm\.(?:c?js|mjs)$/u.test(normalized);
+      if (!isManagerEntry) continue;
+      await access(resolved);
+      return run(process.execPath, [resolved, ...arguments_], options);
     } catch {
       // Try the next package-manager module location.
     }
