@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stringify } from "yaml";
-import { PRODUCTION_RUNTIME_POLICY } from "../../src/core/index.js";
+import { AiyokeError, PRODUCTION_RUNTIME_POLICY } from "../../src/core/index.js";
 import {
   defaultHarnessSpec,
   parseHarnessSpec,
@@ -34,6 +34,105 @@ describe("YAML configuration", () => {
     expect(() => parseHarnessSpec("[]")).toThrow(/must be an object/);
   });
 
+  it("aggregates direct validation failures with source positions", () => {
+    const source = `schemaVersion: 3
+unexpected: true
+project:
+  name: ""
+  architecture: sideways
+  extra: true
+composition:
+  kind: single
+  stack:
+    languages: []
+    frameworks: []
+runtime:
+  kind: disabled
+targets: wrong
+packs: wrong
+generation:
+  sourceDirectory: ""
+  lockFile: ""
+  lineEndings: mixed
+  extra: true
+`;
+
+    try {
+      parseHarnessSpec(source);
+      throw new Error("Expected invalid configuration to be rejected.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AiyokeError);
+      const aiyokeError = error as AiyokeError;
+      expect(aiyokeError.message).toMatch(/10 validation issue/);
+      const issues = aiyokeError.details.issues;
+      expect(Array.isArray(issues)).toBe(true);
+      expect(issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: "unexpected", line: 2, column: 13 }),
+          expect.objectContaining({ path: "project.name", line: 4 }),
+          expect.objectContaining({ path: "project.architecture", line: 5 }),
+          expect.objectContaining({ path: "targets", line: 14 }),
+          expect.objectContaining({ path: "generation.lineEndings", line: 19 })
+        ])
+      );
+    }
+  });
+
+  it("reports the source position for YAML syntax failures", () => {
+    try {
+      parseHarnessSpec("schemaVersion: 3\nproject: [unterminated\n");
+      throw new Error("Expected malformed YAML to be rejected.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AiyokeError);
+      const issues = (error as AiyokeError).details.issues;
+      expect(issues).toEqual([
+        expect.objectContaining({ path: "aiyoke.yaml", line: 3, column: expect.any(Number) })
+      ]);
+    }
+  });
+
+  it("aggregates independent semantic failures across configuration branches", () => {
+    const base = defaultHarnessSpec("semantic-errors");
+    const source = stringify({
+      ...base,
+      composition: { kind: "unknown" },
+      runtime: { kind: "unknown" },
+      targets: [
+        { kind: "unsupported", adapter: "codex", settings: {} },
+        { kind: "chat-plugin", adapter: "chatgpt", settings: [] }
+      ],
+      packs: ["Bad"],
+      generation: {
+        sourceDirectory: "../source",
+        lockFile: "../lock.json",
+        lineEndings: "lf"
+      }
+    });
+
+    try {
+      parseHarnessSpec(source);
+      throw new Error("Expected semantic failures to be rejected.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AiyokeError);
+      const aiyokeError = error as AiyokeError;
+      expect(aiyokeError.message).toMatch(/7 validation issue/);
+      expect(aiyokeError.details.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: "composition.kind", line: expect.any(Number) }),
+          expect.objectContaining({ path: "runtime.kind", line: expect.any(Number) }),
+          expect.objectContaining({ path: "targets[0].kind", line: expect.any(Number) }),
+          expect.objectContaining({ path: "targets[1].settings", line: expect.any(Number) }),
+          expect.objectContaining({ path: "packs", line: expect.any(Number) }),
+          expect.objectContaining({
+            path: "generation.sourceDirectory",
+            line: expect.any(Number)
+          }),
+          expect.objectContaining({ path: "generation.lockFile", line: expect.any(Number) })
+        ])
+      );
+    }
+  });
+
   it("rejects invalid top-level and generation variants", () => {
     const invalidSources = [
       stringify({ ...defaultHarnessSpec("example"), schemaVersion: 4 }),
@@ -47,7 +146,7 @@ describe("YAML configuration", () => {
         generation: {
           sourceDirectory: ".aiyoke/source",
           lockFile: ".aiyoke/lock.json",
-          lineEndings: "crlf"
+          lineEndings: "native"
         }
       }),
       stringify({
@@ -131,6 +230,15 @@ describe("YAML configuration", () => {
       }
     };
     expect(parseHarnessSpec(stringifyHarnessSpec(custom))).toEqual(custom);
+  });
+
+  it("round-trips the supported CRLF generation policy", () => {
+    const spec = defaultHarnessSpec("windows");
+    const configured = {
+      ...spec,
+      generation: { ...spec.generation, lineEndings: "crlf" as const }
+    };
+    expect(parseHarnessSpec(stringifyHarnessSpec(configured))).toEqual(configured);
   });
 
   it("rejects unsafe or out-of-range runtime policies", () => {

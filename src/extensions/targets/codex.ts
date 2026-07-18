@@ -56,8 +56,4 @@ export function createCodexLoader() {
   return loaderFor(codexTarget as TargetImplementation);
 }
 
-export const createCodexTargetLoader = createCodexLoader;
 export const codexLoader = createCodexLoader();
-export const codexTargetLoader = codexLoader;
-
-export default createCodexLoader;

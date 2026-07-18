@@ -26,5 +26,4 @@ export function createJavaScriptLanguageLoader(): ExtensionLoader<typeof javascr
   return loaderFor(javascript);
 }
 
-export const javascriptLanguageLoader = createJavaScriptLanguageLoader;
-export const loader = createJavaScriptLanguageLoader();
+export const javascriptLanguageLoader = createJavaScriptLanguageLoader();

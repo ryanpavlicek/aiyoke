@@ -11,6 +11,7 @@ import type {
 } from "../../extension-sdk/index.js";
 import {
   artifact,
+  assertUniqueModuleDefinitions,
   nativeToolNames,
   renderHooks,
   renderInstructions,
@@ -18,7 +19,8 @@ import {
   renderSkill,
   sanitizeObject,
   stableJson,
-  uniqueSkills
+  uniqueSkills,
+  yamlFrontmatterScalar
 } from "../shared/render.js";
 import {
   descriptor,
@@ -36,6 +38,7 @@ function settings(context: TargetRenderContext): JsonObject {
 
 async function render(context: TargetRenderContext): Promise<readonly ArtifactIntent[]> {
   const modules = context.modules;
+  assertUniqueModuleDefinitions(modules);
   const intents: ArtifactIntent[] = [
     artifact("AGENTS.md", renderInstructions(modules, "Project instructions"), ADAPTER, {
       ownership: "managed-section"
@@ -65,8 +68,8 @@ async function render(context: TargetRenderContext): Promise<readonly ArtifactIn
     seenSubagents.add(subagent.name);
     const body = [
       `---`,
-      `name: ${subagent.name}`,
-      `description: ${subagent.description}`,
+      `name: ${yamlFrontmatterScalar(subagent.name)}`,
+      `description: ${yamlFrontmatterScalar(subagent.description)}`,
       `tools: ${nativeToolNames(subagent.tools).join(", ")}`,
       ...(subagent.readOnly ? ["permissionMode: plan"] : []),
       `---`,
@@ -124,8 +127,4 @@ export function createClaudeCodeLoader() {
   return loaderFor(claudeCodeTarget as TargetImplementation);
 }
 
-export const createClaudeCodeTargetLoader = createClaudeCodeLoader;
 export const claudeCodeLoader = createClaudeCodeLoader();
-export const claudeCodeTargetLoader = claudeCodeLoader;
-
-export default createClaudeCodeLoader;

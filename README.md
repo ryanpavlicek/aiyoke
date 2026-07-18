@@ -63,11 +63,11 @@ reported as drift by `check` so the update can be reviewed before an intentional
 
 ## Status
 
-Version 0.3.3 is the current public hardening release. Its code, target,
-language, framework, runtime, package, and clean-clone gates have reproducible evidence in
-[Public release readiness](docs/release-readiness.md). Publication remains a
-deliberate maintainer action behind the protected npm environment; unproven
-behavior is not silently presented as complete.
+Version 0.4.0 is the focused contract-hardening source release. Its code, target,
+language, framework, runtime, package, security-boundary, and clean-clone gates
+have reproducible evidence in [Public release readiness](docs/release-readiness.md).
+npm publication remains a separate maintainer action behind the protected
+environment; unproven behavior is not silently presented as complete.
 
 ## What Aiyoke generates
 
@@ -84,7 +84,9 @@ Generated runtime templates include bounded retries, deadlines and cancellation,
 fallback and circuit-breaker policies, structured-output validation/repair,
 redacted events, approval and guard ports, caching and evaluation ports, token
 and cost budgets, and bounded batch concurrency. External implementations remain
-replaceable through registration contracts.
+replaceable through registration contracts. Each resolved policy is emitted as
+both a language-neutral `policy.json` audit record and an executable native
+`policy.*` options module, preventing copied defaults or millisecond/second drift.
 
 ## Supported surface
 
@@ -280,7 +282,9 @@ The complete option and exit-code contract is in the [CLI reference](docs/cli.md
 
 Aiyoke normalizes paths, rejects traversal and symbolic-link ancestors, binds an
 atomic write's staged file to the verified real parent, and rechecks that parent
-before rename. Generated files have explicit ownership:
+before rename. `apply` stages the complete write set, revalidates every expected
+previous value, and commits it as a rollback-capable plan transaction. Generated
+files have explicit ownership:
 
 - `generated` owns the complete file;
 - `managed-section` owns only a uniquely marked bounded region; and

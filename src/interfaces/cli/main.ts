@@ -268,6 +268,20 @@ function configurationText(result: import("../../engine/index.js").ConfigureResu
   ].join("\n");
 }
 
+function issueLines(error: AiyokeError): readonly string[] {
+  const issues = error.details.issues;
+  if (!Array.isArray(issues)) return [];
+  return issues.flatMap((issue) => {
+    if (issue === null || typeof issue !== "object" || Array.isArray(issue)) return [];
+    const path = typeof issue.path === "string" ? issue.path : "aiyoke.yaml";
+    const message = typeof issue.message === "string" ? issue.message : "Invalid value.";
+    const line = typeof issue.line === "number" ? issue.line : undefined;
+    const column = typeof issue.column === "number" ? issue.column : undefined;
+    const location = line === undefined ? path : `${path} (${line}:${column ?? 1})`;
+    return [`  - ${location}: ${message}`];
+  });
+}
+
 export async function runCli(
   args = process.argv.slice(2),
   runtime: CliRuntime = {}
@@ -278,6 +292,21 @@ export async function runCli(
     if (options.command === "help") {
       emit(CLI_HELP, false);
       return 0;
+    }
+    const commands = new Set([
+      "init",
+      "plan",
+      "apply",
+      "check",
+      "doctor",
+      "detect",
+      "list",
+      "config",
+      "migrate",
+      "rollback"
+    ]);
+    if (!commands.has(options.command)) {
+      throw new AiyokeError("INVALID_SPEC", `Unknown command ${options.command}.`);
     }
 
     const { AiyokeEngine } = await import("../../engine/index.js");
@@ -430,7 +459,7 @@ export async function runCli(
       emit(options.json ? result : migrationText(result), options.json);
       return 0;
     }
-    throw new AiyokeError("INVALID_SPEC", `Unknown command ${options.command}.`);
+    throw new AiyokeError("INVALID_SPEC", `Command ${options.command} did not complete.`);
   } catch (error) {
     const json = options?.json ?? args.includes("--json");
     const payload =
@@ -443,7 +472,12 @@ export async function runCli(
             }
           };
     if (json) console.error(JSON.stringify(payload, undefined, 2));
-    else console.error(`aiyoke: ${payload.error.message}`);
+    else {
+      const issues = error instanceof AiyokeError ? issueLines(error) : [];
+      console.error(
+        [`aiyoke: ${payload.error.message}`, ...(issues.length === 0 ? [] : issues)].join("\n")
+      );
+    }
     return 1;
   }
 }

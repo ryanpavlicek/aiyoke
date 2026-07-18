@@ -133,6 +133,19 @@ try {
     validateCapabilityMatrix(rustDirectory, "rust")
   ]);
 
+  const conformanceDocuments = await Promise.all(
+    [typeScriptDirectory, javaScriptDirectory, pythonDirectory, goDirectory, rustDirectory].map(
+      (directory) => readFile(join(directory, "conformance.json"), "utf8")
+    )
+  );
+  const [referenceConformance, ...otherConformanceDocuments] = conformanceDocuments;
+  if (
+    referenceConformance === undefined ||
+    otherConformanceDocuments.some((document) => document !== referenceConformance)
+  ) {
+    throw new Error("Generated runtime conformance contracts are not byte-identical.");
+  }
+
   run(process.execPath, ["--check", join(javaScriptDirectory, "runtime.js")]);
   run(process.execPath, ["--check", join(javaScriptDirectory, "modules", "tooling.js")]);
   run(process.execPath, ["--check", join(javaScriptDirectory, "modules", "evaluation.js")]);
@@ -151,15 +164,16 @@ try {
     "--target",
     "ES2023",
     "--module",
-    "NodeNext",
+    "ESNext",
     "--moduleResolution",
-    "NodeNext",
+    "Bundler",
     "--types",
     "node",
     "--typeRoots",
     resolve("node_modules", "@types"),
     "--skipLibCheck",
     join(typeScriptDirectory, "runtime.ts"),
+    join(typeScriptDirectory, "policy.ts"),
     join(typeScriptDirectory, "runtime.test.ts"),
     join(typeScriptDirectory, "modules", "tooling.ts"),
     join(typeScriptDirectory, "modules", "tooling.test.ts"),
@@ -181,6 +195,7 @@ try {
     "-m",
     "py_compile",
     join(pythonDirectory, "runtime.py"),
+    join(pythonDirectory, "policy.py"),
     join(pythonDirectory, "test_runtime.py"),
     join(pythonDirectory, "modules", "tooling.py"),
     join(pythonDirectory, "modules", "test_tooling.py"),
@@ -195,6 +210,7 @@ try {
   run(python, ["-m", "unittest", "discover", "-s", pythonDirectory, "-p", "test_responses.py"]);
   const goSources = [
     join(goDirectory, "runtime.go"),
+    join(goDirectory, "policy.go"),
     join(goDirectory, "runtime_test.go"),
     join(goDirectory, "tooling.go"),
     join(goDirectory, "tooling_test.go"),
@@ -210,9 +226,16 @@ try {
   } else {
     run("go", ["test", ...goSources]);
   }
-  run("gofmt", ["-d", join(goDirectory, "runtime.go"), join(goDirectory, "runtime_test.go")], {
-    requireEmptyStdout: true
-  });
+  run(
+    "gofmt",
+    [
+      "-d",
+      join(goDirectory, "runtime.go"),
+      join(goDirectory, "policy.go"),
+      join(goDirectory, "runtime_test.go")
+    ],
+    { requireEmptyStdout: true }
+  );
   run(
     "gofmt",
     [
@@ -231,6 +254,7 @@ try {
     "2021",
     "--check",
     join(rustDirectory, "runtime.rs"),
+    join(rustDirectory, "policy.rs"),
     join(rustDirectory, "runtime_test.rs"),
     join(rustDirectory, "tooling.rs"),
     join(rustDirectory, "tooling_test.rs"),

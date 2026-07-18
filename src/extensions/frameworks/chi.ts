@@ -1,7 +1,1 @@
-export {
-  chi,
-  chiFrameworkLoader,
-  chiLoader,
-  chiLoader as loader,
-  createChiFrameworkLoader
-} from "./go.js";
+export { chi, chiFrameworkLoader, createChiFrameworkLoader } from "./go.js";

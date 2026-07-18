@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { HarnessCompiler, type HashPort, type WorkspacePort } from "../../src/application/index.js";
+import {
+  HarnessCompiler,
+  type HashPort,
+  type WorkspacePort,
+  type WorkspaceWrite
+} from "../../src/application/index.js";
 import {
   type ArtifactIntent,
   extensionId,
@@ -33,6 +38,13 @@ class MemoryWorkspace implements WorkspacePort {
 
   async writeAtomic(path: string, content: string): Promise<void> {
     this.values.set(path, content);
+  }
+
+  async writeBatchAtomic(writes: readonly WorkspaceWrite[]): Promise<void> {
+    for (const write of writes) {
+      if (this.values.get(write.path) !== write.previous) throw new Error("stale batch");
+    }
+    for (const write of writes) this.values.set(write.path, write.content);
   }
 }
 

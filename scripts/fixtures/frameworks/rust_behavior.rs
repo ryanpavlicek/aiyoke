@@ -8,6 +8,7 @@ use actix_web::{test, web, Responder};
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::Json;
+use http_body_util::BodyExt;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -55,6 +56,7 @@ fn runtime() -> Arc<HarnessRuntime<String, String>> {
                 max_batch_size: 4,
                 circuit_failure_threshold: 2,
                 circuit_reset_after: Duration::from_secs(1),
+                circuit_half_open_max_attempts: 1,
             },
             adapters,
             RuntimePorts::default(),
@@ -106,10 +108,19 @@ async fn axum_carries_auth_and_cancellation_options() {
     let response =
         aiyoke_axum_handler(State(state.clone()), headers.clone(), Json("ok".to_owned())).await;
     assert_eq!(response.status(), StatusCode::OK);
+    let success_body: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(success_body["usage"]["inputTokens"], 4);
+    assert_eq!(success_body["usage"]["outputTokens"], 2);
+    assert_eq!(success_body["usage"]["estimatedCostUsd"], 0.001);
 
     headers.insert("x-cancel", HeaderValue::from_static("1"));
     let cancelled = aiyoke_axum_handler(State(state), headers, Json("cancel".to_owned())).await;
     assert_eq!(cancelled.status().as_u16(), 499);
+    let failure_body: serde_json::Value =
+        serde_json::from_slice(&cancelled.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(failure_body["error"]["kind"], "cancelled");
+    assert!(failure_body["error"]["message"].is_string());
 }
 
 #[actix_web::test]

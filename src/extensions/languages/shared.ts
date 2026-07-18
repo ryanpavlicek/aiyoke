@@ -1,5 +1,4 @@
 import {
-  compareCodePoints,
   extensionId,
   type HarnessModule,
   type InstructionBlock,
@@ -12,6 +11,13 @@ import {
   type LanguageExtension,
   type WorkspaceSnapshot
 } from "../../extension-sdk/index.js";
+import {
+  indexWorkspaceFiles,
+  matchesPathOrBasename,
+  normalizeWorkspacePath
+} from "../shared/detection.js";
+
+export { loaderFor } from "../shared/loader.js";
 
 export interface LanguageDefinition {
   readonly id: string;
@@ -28,28 +34,13 @@ export interface LanguageDefinition {
   readonly skillBody: string;
 }
 
-function normalize(value: string): string {
-  return value.replaceAll("\\", "/").toLowerCase();
-}
-
 export async function detectLanguage(
   workspace: WorkspaceSnapshot,
   definition: LanguageDefinition
 ): Promise<DetectionResult> {
-  const originalFiles = [...workspace.files].sort(
-    (left, right) =>
-      compareCodePoints(normalize(left), normalize(right)) || compareCodePoints(left, right)
-  );
-  const originalByNormalized = new Map<string, string>();
-  for (const file of originalFiles) {
-    const normalized = normalize(file);
-    if (!originalByNormalized.has(normalized)) originalByNormalized.set(normalized, file);
-  }
-  const files = [...originalByNormalized.keys()];
-  const markerSet = new Set(definition.markerFiles.map(normalize));
-  const markers = files.filter(
-    (file) => markerSet.has(file) || markerSet.has(file.split("/").at(-1) ?? "")
-  );
+  const { files, originalByNormalized } = indexWorkspaceFiles(workspace);
+  const markerSet = new Set(definition.markerFiles.map(normalizeWorkspacePath));
+  const markers = files.filter((file) => matchesPathOrBasename(file, markerSet));
   const extensions = new Set(definition.fileExtensions.map((extension) => extension.toLowerCase()));
   const sourceFiles = files.filter((file) => {
     const name = file.split("/").at(-1) ?? "";
@@ -133,8 +124,4 @@ export function createLanguage(definition: LanguageDefinition): LanguageExtensio
       };
     }
   });
-}
-
-export function loaderFor<T extends LanguageExtension>(extension: T) {
-  return { descriptor: extension.descriptor, load: async () => extension };
 }

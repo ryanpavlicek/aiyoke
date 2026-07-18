@@ -83,18 +83,18 @@ export {
 };
 
 export const frameworkLoaders = [
-  createFastApiFrameworkLoader(),
-  createDjangoFrameworkLoader(),
-  createFlaskFrameworkLoader(),
-  createNextJsFrameworkLoader(),
-  createNestJsFrameworkLoader(),
-  createFastifyFrameworkLoader(),
-  createExpressFrameworkLoader(),
-  createAxumFrameworkLoader(),
-  createActixFrameworkLoader(),
-  createChiFrameworkLoader(),
-  createGinFrameworkLoader(),
-  createFiberFrameworkLoader()
+  fastApiFrameworkLoader,
+  djangoFrameworkLoader,
+  flaskFrameworkLoader,
+  nextJsFrameworkLoader,
+  nestJsFrameworkLoader,
+  fastifyFrameworkLoader,
+  expressFrameworkLoader,
+  axumFrameworkLoader,
+  actixFrameworkLoader,
+  chiFrameworkLoader,
+  ginFrameworkLoader,
+  fiberFrameworkLoader
 ] as const;
 
 export const frameworkLoaderFactories = [

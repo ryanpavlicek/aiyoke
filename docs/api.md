@@ -123,6 +123,9 @@ before import, and verifies the exported loader descriptor.
 
 Required options are `manifestPath`, `packageRoot`, `trust`, and `consent`.
 Optional `maxPackageBytes` and `maxPackageFiles` default to 32 MiB and 2,000.
+An optional `diagnostics: ExtensionDiagnosticSink` receives sanitized
+`{ boundary, stage, reason }` events that distinguish manifest, snapshot, trust,
+entrypoint, and import failures without forwarding extension-controlled text.
 The result is a discriminated union:
 
 - `loaded`: includes `loader`, `manifest`, `manifestDigest`, and `contentDigest`;
@@ -164,7 +167,9 @@ function renderSignedExtensionIsolated(
 This verifies the signed package without importing it in the host, serializes a
 bounded workspace snapshot, re-hashes/imports in a minimal child process, invokes
 either `target-render` or `runtime-render`, and validates the returned artifact
-set in both processes. `signal` cancels an active render.
+set in both processes. `signal` cancels an active render. The same optional
+diagnostic sink reports sanitized isolation protocol, package, module, load,
+render, and artifact-validation stages; sink failures are ignored.
 
 Optional isolation limits and defaults:
 
@@ -195,7 +200,7 @@ The facade re-exports these runtime values without loading the engine:
 | `ExtensionRegistry` | Deterministic loader registration/resolution. |
 | `runExtensionCompatibility` | Standalone public compatibility suite. |
 
-Root-re-exported domain and SDK contract types are `ArtifactIntent`,
+Root-re-exported domain and SDK contract types are `AiyokeEngine`, `ArtifactIntent`,
 `HarnessModule`, `HarnessPlan`, `BuiltinDiagnosticDefinition`, `HarnessSpec`,
 `InitPreset`, `InitPresetContext`, `InitPresetSelection`, `MonorepoWorkspace`,
 `PlanOperation`, `ProjectComposition`, `RuntimeHarnessSpec`, `RuntimePolicy`,
@@ -204,7 +209,8 @@ Root-re-exported domain and SDK contract types are `ArtifactIntent`,
 
 Root-exported extension types are `AiyokeExtension`, `CapabilityPackExtension`,
 `CompatibilityFixture`, `CompatibilityReport`, `CompatibilityRunOptions`,
-`ExtensionDescriptor`, `ExtensionLoader`, `FrameworkExtension`,
+`ExtensionDescriptor`, `ExtensionDiagnosticEvent`, `ExtensionDiagnosticSink`,
+`ExtensionLoader`, `FrameworkExtension`,
 `IsolatedRendererResult`, `IsolatedSignedExtensionOptions`, `LanguageExtension`,
 `RuntimeTemplateExtension`, `SignedExtensionDiscoveryOptions`,
 `SignedExtensionDiscoveryResult`, `SignedExtensionManifest`, and
@@ -273,7 +279,9 @@ Runtime policy exports are `RetryPolicy`, `CircuitBreakerPolicy`,
 
 Instruction/module types are `InstructionBlock`, `SkillDefinition`,
 `HookDefinition`, `McpServerDefinition`, `SubagentDefinition`, and
-`HarnessModule`. Artifact/plan types are `ArtifactOwnership`,
+`HarnessModule`. `ModuleDefinitionConflict` and
+`moduleDefinitionConflicts(modules)` expose deterministic duplicate namespace
+evidence for host tooling. Artifact/plan types are `ArtifactOwnership`,
 `ManagedSectionMarkers`, `ArtifactIntent`, `PlanOperation`, `HarnessPlan`,
 `VerificationFinding`, and `HarnessLifecycle`.
 

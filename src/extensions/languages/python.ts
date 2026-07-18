@@ -26,5 +26,4 @@ export function createPythonLanguageLoader(): ExtensionLoader<typeof python> {
   return loaderFor(python);
 }
 
-export const pythonLanguageLoader = createPythonLanguageLoader;
-export const loader = createPythonLanguageLoader();
+export const pythonLanguageLoader = createPythonLanguageLoader();

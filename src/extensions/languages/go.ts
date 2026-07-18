@@ -26,5 +26,4 @@ export function createGoLanguageLoader(): ExtensionLoader<typeof go> {
   return loaderFor(go);
 }
 
-export const goLanguageLoader = createGoLanguageLoader;
-export const loader = createGoLanguageLoader();
+export const goLanguageLoader = createGoLanguageLoader();

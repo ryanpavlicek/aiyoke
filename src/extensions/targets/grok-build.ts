@@ -2,8 +2,6 @@ import {
   type ArtifactIntent,
   compareCodePoints,
   type HarnessModule,
-  type HookDefinition,
-  type JsonValue,
   type McpServerDefinition,
   type VerificationFinding
 } from "../../core/index.js";
@@ -14,6 +12,8 @@ import type {
 } from "../../extension-sdk/index.js";
 import {
   artifact,
+  assertUniqueModuleDefinitions,
+  renderHooks,
   renderInstructions,
   renderSkill,
   stableJson,
@@ -28,39 +28,10 @@ import {
 
 const ADAPTER = "grok-build";
 
-const GROK_HOOK_EVENTS: Readonly<Record<HookDefinition["event"], string>> = {
-  "session-start": "SessionStart",
-  "pre-tool": "PreToolUse",
-  "post-tool": "PostToolUse",
-  stop: "Stop"
-};
-
-function uniqueHooks(modules: readonly HarnessModule[]): readonly HookDefinition[] {
-  const hooks: HookDefinition[] = [];
-  const seen = new Set<string>();
-  for (const hook of modules
-    .flatMap((module) => module.hooks)
-    .sort((left, right) => compareCodePoints(left.id, right.id))) {
-    if (seen.has(hook.id)) continue;
-    seen.add(hook.id);
-    hooks.push(hook);
-  }
-  return hooks;
-}
-
 function renderGrokHooks(modules: readonly HarnessModule[]): string | undefined {
-  const grouped: Record<string, JsonValue[]> = {};
-  for (const hook of uniqueHooks(modules)) {
-    const event = GROK_HOOK_EVENTS[hook.event];
-    const entries = grouped[event] ?? [];
-    entries.push({
-      ...(hook.matcher === undefined ? {} : { matcher: hook.matcher }),
-      hooks: [{ type: "command", command: hook.command }]
-    });
-    grouped[event] = entries;
-  }
-  if (Object.keys(grouped).length === 0) return undefined;
-  return stableJson({ hooks: grouped });
+  const hooks = renderHooks(modules);
+  if (Object.keys(hooks.hooks as object).length === 0) return undefined;
+  return stableJson(hooks);
 }
 
 function tomlString(value: string): string {
@@ -100,6 +71,7 @@ function renderGrokMcpConfig(modules: readonly HarnessModule[]): string | undefi
 }
 
 async function render(context: TargetRenderContext): Promise<readonly ArtifactIntent[]> {
+  assertUniqueModuleDefinitions(context.modules);
   const claudeSelected = context.spec.targets.some((target) => target.adapter === "claude-code");
   const skillEntries = claudeSelected ? [] : uniqueSkills(context.modules);
   const intents: ArtifactIntent[] = [
@@ -148,8 +120,4 @@ export function createGrokBuildLoader() {
   return loaderFor(grokBuildTarget as TargetImplementation);
 }
 
-export const createGrokBuildTargetLoader = createGrokBuildLoader;
 export const grokBuildLoader = createGrokBuildLoader();
-export const grokBuildTargetLoader = grokBuildLoader;
-
-export default createGrokBuildLoader;

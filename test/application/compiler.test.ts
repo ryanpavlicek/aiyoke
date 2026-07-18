@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { HarnessCompiler, type HashPort, type WorkspacePort } from "../../src/application/index.js";
+import {
+  HarnessCompiler,
+  type HashPort,
+  type WorkspacePort,
+  type WorkspaceWrite
+} from "../../src/application/index.js";
 import {
   type ArtifactIntent,
   type ArtifactOwnership,
@@ -31,6 +36,16 @@ class MemoryWorkspace implements WorkspacePort {
   async writeAtomic(path: string, content: string): Promise<void> {
     this.writes += 1;
     this.values.set(path, content);
+  }
+
+  async writeBatchAtomic(writes: readonly WorkspaceWrite[]): Promise<void> {
+    for (const write of writes) {
+      if (this.values.get(write.path) !== write.previous) throw new Error("stale batch");
+    }
+    for (const write of writes) {
+      this.writes += 1;
+      this.values.set(write.path, write.content);
+    }
   }
 }
 
@@ -137,6 +152,46 @@ describe("HarnessCompiler", () => {
     expect(second.operations.every((operation) => operation.kind === "unchanged")).toBe(true);
     expect((await harness.apply(second)).changedPaths).toEqual([]);
     expect(workspace.writes).toBe(2);
+  });
+
+  it("emits and fingerprints CRLF artifacts deterministically when configured", async () => {
+    const workspace = new MemoryWorkspace();
+    const harness = compiler(workspace);
+    const base = spec();
+    const crlfSpec: HarnessSpec = {
+      ...base,
+      generation: { ...base.generation, lineEndings: "crlf" }
+    };
+    const plan = await harness.plan(crlfSpec);
+    const contents = plan.operations.flatMap((operation) =>
+      operation.kind === "conflict" ? [] : [operation.artifact.content]
+    );
+    expect(contents.length).toBeGreaterThan(0);
+    expect(contents.every((content) => !/(?<!\r)\n/u.test(content))).toBe(true);
+
+    await harness.apply(plan);
+    const repeated = await harness.plan(crlfSpec);
+    expect(repeated.operations.every((operation) => operation.kind === "unchanged")).toBe(true);
+    expect((await harness.plan(crlfSpec)).fingerprint).toBe(repeated.fingerprint);
+  });
+
+  it.each([".git/hooks/pre-commit", "AIYOKE.YAML", ".aiyoke/backups/recovery.yaml"])(
+    "rejects extension output to reserved destination %s",
+    async (path) => {
+      const workspace = new MemoryWorkspace();
+      await expect(compiler(workspace, { path }).plan(spec())).rejects.toMatchObject({
+        code: "INVALID_PATH"
+      });
+      expect(workspace.writes).toBe(0);
+    }
+  );
+
+  it("reserves the configured compiler lock file from extensions", async () => {
+    const workspace = new MemoryWorkspace();
+    await expect(
+      compiler(workspace, { path: ".aiyoke/lock.json" }).plan(spec())
+    ).rejects.toMatchObject({ code: "INVALID_PATH" });
+    expect(workspace.writes).toBe(0);
   });
 
   it("hashes semantically identical specifications canonically", async () => {

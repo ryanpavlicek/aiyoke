@@ -29,5 +29,4 @@ export function createTypeScriptLanguageLoader(): ExtensionLoader<typeof typescr
   return loaderFor(typescript);
 }
 
-export const typescriptLanguageLoader = createTypeScriptLanguageLoader;
-export const loader = createTypeScriptLanguageLoader();
+export const typescriptLanguageLoader = createTypeScriptLanguageLoader();

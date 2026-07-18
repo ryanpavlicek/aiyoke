@@ -150,10 +150,11 @@ const specArbitrary = fc
       maxLength: 8,
       selector: (target) => `${target.kind}:${target.adapter}`
     }),
-    packs: fc.uniqueArray(extensionIdArbitrary, { maxLength: 5 })
+    packs: fc.uniqueArray(extensionIdArbitrary, { maxLength: 5 }),
+    lineEndings: fc.constantFrom("lf" as const, "crlf" as const)
   })
   .map(
-    ({ name, architecture, composition, targets, packs }): HarnessSpec => ({
+    ({ name, architecture, composition, targets, packs, lineEndings }): HarnessSpec => ({
       schemaVersion: 3,
       project: { name, architecture },
       composition,
@@ -167,7 +168,7 @@ const specArbitrary = fc
       generation: {
         sourceDirectory: ".aiyoke/source",
         lockFile: ".aiyoke/lock.json",
-        lineEndings: "lf"
+        lineEndings
       }
     })
   );

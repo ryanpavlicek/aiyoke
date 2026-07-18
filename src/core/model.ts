@@ -230,7 +230,7 @@ export type TargetSpec =
 export interface GenerationPolicy {
   readonly sourceDirectory: string;
   readonly lockFile: string;
-  readonly lineEndings: "lf";
+  readonly lineEndings: "lf" | "crlf";
 }
 
 export interface HarnessSpec {

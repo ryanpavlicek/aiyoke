@@ -37,7 +37,7 @@ tests and available to downstream tooling.
 | Tools | Typed registry, validation, approval, deadline/cancellation, redacted events | Approval and event-sink ports |
 | Evaluation | Versioned suites, deterministic sampling, concurrency, scoring, baseline regression | Report-sink and human-feedback ports |
 | Observability | Correlated redacted lifecycle and tool events, latency, usage and cost fields | Event-sink/trace adapter port |
-| Safety | Composable input/output/tool guards and fail-closed approval decisions | Moderation/policy adapters behind guard and approval ports |
+| Safety | Composable input/output guards plus validated tool input/output and fail-closed approval decisions | Moderation/policy adapters behind guard and approval ports |
 | Caching | Cache keying and explicit cache outcomes in the runtime lifecycle | Registered cache port for an application-selected store |
 
 The port is part of the generated source contract and is exercised with an
@@ -81,11 +81,11 @@ cases are never reported as intentionally excluded.
 
 ## 4. Safety and control
 
-Generated runtime templates must provide composable input, tool, and output guard
-registries; policy decisions and redacted audit events; and an explicit
-human-approval lifecycle for configured high-impact actions. Application policy
-remains separate from provider adapters and cannot be silently bypassed by a
-fallback route.
+Generated runtime templates must provide composable input/output guard registries,
+a separate typed tooling registry with input/output validation, policy decisions
+and redacted audit events, and an explicit human-approval lifecycle for configured
+high-impact actions. Application policy remains separate from provider adapters
+and cannot be silently bypassed by a fallback route.
 
 ## 5. Developer experience and consistency
 
@@ -115,6 +115,12 @@ and JavaScript may share one package implementation with distinct consumer
 fixtures. Python, Rust, and Go have their own generated runtime modules. Each
 language fixture must run its native formatter, compiler or type checker, unit
 tests, and an adversarial conformance suite in CI.
+
+Every native suite consumes one byte-identical, versioned `conformance.json` for
+wire fields, provider failure classification, construction errors, guard stages,
+and synchronous adapter failures. The resolved language-neutral policy also
+generates a native `policy.*` options module, and tests pin millisecond units plus
+circuit half-open limits so policy and executable defaults cannot drift.
 
 The native fixture gate also validates each generated `capabilities.json` as a
 closed acceptance matrix. It requires exactly these seven families, both composed

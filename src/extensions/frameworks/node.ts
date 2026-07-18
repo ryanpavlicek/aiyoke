@@ -104,11 +104,7 @@ export function createFastifyFrameworkLoader(): ExtensionLoader<typeof fastify> 
 export function createExpressFrameworkLoader(): ExtensionLoader<typeof express> {
   return loaderFor(express);
 }
-export const nextJsFrameworkLoader = createNextJsFrameworkLoader;
-export const nestJsFrameworkLoader = createNestJsFrameworkLoader;
-export const fastifyFrameworkLoader = createFastifyFrameworkLoader;
-export const expressFrameworkLoader = createExpressFrameworkLoader;
-export const nextjsLoader = createNextJsFrameworkLoader();
-export const nestjsLoader = createNestJsFrameworkLoader();
-export const fastifyLoader = createFastifyFrameworkLoader();
-export const expressLoader = createExpressFrameworkLoader();
+export const nextJsFrameworkLoader = createNextJsFrameworkLoader();
+export const nestJsFrameworkLoader = createNestJsFrameworkLoader();
+export const fastifyFrameworkLoader = createFastifyFrameworkLoader();
+export const expressFrameworkLoader = createExpressFrameworkLoader();

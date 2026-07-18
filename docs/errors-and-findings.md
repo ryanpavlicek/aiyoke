@@ -50,6 +50,9 @@ in the built-in diagnostic catalog but is intentionally not an
 The `details` object is bounded JSON intended for automation (for example,
 `path`, `extension`, `fingerprint`, or `conflicts`). It must not be assumed to
 have the same keys for every occurrence, and it never contains credentials.
+Configuration failures may include `details.issues`, an ordered array of
+`{ path, message, line?, column? }` entries. Positions are one-based and are
+best-effort for semantic errors; YAML syntax errors use the parser's position.
 
 ## Built-in verification findings
 
@@ -70,6 +73,7 @@ findings do not, by themselves, make a command fail.
 | `EMPTY_FALLBACK_MODEL` | error | An OpenRouter fallback route contains a blank model ID. | Remove blank entries and use non-empty model identifiers. |
 | `EMPTY_FIXED_ROUTE` | error | OpenRouter fixed routing has an empty model ID. | Set `routing.model` to a non-empty model identifier. |
 | `EMPTY_PROVIDER_ORDER` | error | OpenRouter capability routing has no provider order. | Add at least one provider to `routing.providerOrder`. |
+| `MODULE_DEFINITION_CONFLICT` | error | Two selected extensions define the same skill, subagent, hook, or MCP namespace. | Rename or remove one definition so generated module identities are unambiguous. |
 | `NO_LANGUAGES` | warning | `doctor` found no language extension in the selected project or monorepo stack. | Select a supported language, or intentionally keep a target-only project and acknowledge the warning. |
 | `NO_TARGETS` | error | `doctor` found no AI target adapter. | Select at least one target such as `claude-code`, `codex`, `grok-build`, or `openrouter`. |
 | `READY` | info | `doctor` found no error-severity findings. | No action is required; continue with the normal plan/apply/check workflow. |

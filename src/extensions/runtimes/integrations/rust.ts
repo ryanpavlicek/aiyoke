@@ -56,7 +56,9 @@ where
         .into_response(),
         Ok(ModelResult::Failure(failure)) => (
             axum_failure_status(failure.kind),
-            Json(json!({ "error": { "message": failure.message } })),
+            Json(json!({
+                "error": { "kind": failure.kind.as_str(), "message": failure.message }
+            })),
         )
             .into_response(),
         Err(_) => StatusCode::BAD_GATEWAY.into_response(),
@@ -118,8 +120,9 @@ where
             }
         })),
         Ok(ModelResult::Failure(failure)) => {
-            HttpResponse::build(actix_failure_status(failure.kind))
-                .json(json!({ "error": { "message": failure.message } }))
+            HttpResponse::build(actix_failure_status(failure.kind)).json(json!({
+                "error": { "kind": failure.kind.as_str(), "message": failure.message }
+            }))
         }
         Err(_) => HttpResponse::BadGateway().finish(),
     }

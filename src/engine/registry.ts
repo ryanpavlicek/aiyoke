@@ -4,7 +4,7 @@ import { languageLoaders } from "../extensions/languages/index.js";
 import { engineeringPackLoader } from "../extensions/packs/index.js";
 import { runtimeLoaders } from "../extensions/runtimes/index.js";
 import {
-  createChatGPTLoader,
+  createChatGptLoader,
   createClaudeCodeLoader,
   createCodexLoader,
   createGrokBuildLoader,
@@ -19,7 +19,7 @@ export function registerBuiltins(registry = new ExtensionRegistry()): ExtensionR
   registry.registerPack(engineeringPackLoader);
   registry.registerTarget(createClaudeCodeLoader());
   registry.registerTarget(createCodexLoader());
-  registry.registerTarget(createChatGPTLoader());
+  registry.registerTarget(createChatGptLoader());
   registry.registerTarget(createGrokBuildLoader());
   registry.registerTarget(createXaiApiLoader());
   registry.registerTarget(createOpenRouterLoader());

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { access, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,10 +39,6 @@ const forbidden = [
   /(?:^|\/)\.aiyoke(?:\/|$)/
 ];
 
-function command(name) {
-  return process.platform === "win32" ? `${name}.cmd` : name;
-}
-
 async function packageBinary(packageName) {
   const manifestPath = path.join(root, "node_modules", ...packageName.split("/"), "package.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -55,8 +51,21 @@ async function packageBinary(packageName) {
 }
 
 async function runPackageManager(manager, arguments_, options = {}) {
+  const explicitEntry =
+    manager === "npm" ? process.env.AIYOKE_NPM_EXECPATH : process.env.AIYOKE_PNPM_EXECPATH;
   const candidates = [
+    explicitEntry,
     process.env.npm_execpath,
+    manager === "pnpm" && process.env.PNPM_HOME !== undefined
+      ? path.resolve(process.env.PNPM_HOME, process.platform === "win32" ? "pnpm.cmd" : "pnpm")
+      : undefined,
+    path.resolve(
+      path.dirname(process.execPath),
+      "node_modules",
+      manager,
+      "bin",
+      manager === "npm" ? "npm-cli.js" : "pnpm.mjs"
+    ),
     path.resolve(
       path.dirname(process.execPath),
       "..",
@@ -74,22 +83,28 @@ async function runPackageManager(manager, arguments_, options = {}) {
       "bin",
       manager === "npm" ? "npm-cli.js" : "pnpm.mjs"
     )
-  ].filter((candidate) => {
-    if (typeof candidate !== "string") return false;
-    const normalized = candidate.replaceAll("\\", "/");
-    return manager === "npm"
-      ? normalized.endsWith("/npm/bin/npm-cli.js")
-      : /\/pnpm\/bin\/pnpm\.(?:c?js|mjs)$/.test(normalized);
-  });
+  ];
   for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
     try {
-      await access(candidate);
-      return run(process.execPath, [candidate, ...arguments_], options);
+      const resolved = await realpath(candidate);
+      const normalized = resolved.replaceAll("\\", "/");
+      const isManagerEntry =
+        manager === "npm"
+          ? normalized.endsWith("/npm/bin/npm-cli.js")
+          : /\/pnpm\/bin\/pnpm\.(?:c?js|mjs)$/u.test(normalized);
+      if (!isManagerEntry) continue;
+      await access(resolved);
+      return run(process.execPath, [resolved, ...arguments_], options);
     } catch {
-      // Try the next package-manager location before falling back to its shim.
+      // Try the next package-manager module location.
     }
   }
-  return run(command(manager), arguments_, options);
+  throw new Error(
+    `Unable to locate ${manager}'s JavaScript entry point. Install ${manager} or set ${
+      manager === "npm" ? "AIYOKE_NPM_EXECPATH" : "AIYOKE_PNPM_EXECPATH"
+    } to its pinned CLI module.`
+  );
 }
 
 function run(executable, arguments_, options = {}) {
@@ -97,7 +112,6 @@ function run(executable, arguments_, options = {}) {
     const child = spawn(executable, arguments_, {
       cwd: options.cwd ?? root,
       env: options.env ?? process.env,
-      shell: process.platform === "win32" && executable.endsWith(".cmd"),
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
       windowsHide: true
     });

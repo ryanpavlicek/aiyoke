@@ -1,6 +1,13 @@
 import type { RuntimeModuleDefinition } from "../shared.js";
 
-const tooling = `const toolName = /^[a-z][a-z0-9._-]{0,63}$/;
+export const javaScriptRuntimeModules: readonly RuntimeModuleDefinition[] = [
+  {
+    id: "tooling",
+    description: "Registered, guarded, approval-aware tool execution.",
+    artifacts: [
+      {
+        path: "modules/tooling.js",
+        source: `const toolName = /^[a-z][a-z0-9._-]{0,63}$/;
 const safeCode = /^[a-z][a-z0-9._-]{0,63}$/;
 export class ToolRegistry {
     #tools = new Map();
@@ -169,9 +176,11 @@ export class ToolRunner {
         return { kind: "success", value: outcome.value, durationMs: this.#now() - startedAt };
     }
 }
-`;
-
-const toolingTests = `import assert from "node:assert/strict";
+`
+      },
+      {
+        path: "modules/tooling.test.js",
+        source: `import assert from "node:assert/strict";
 import test from "node:test";
 import { ToolRegistry, ToolRunner } from "./tooling.js";
 const request = {
@@ -232,9 +241,17 @@ test("returns on timeout even when a handler ignores cancellation", async () => 
     const result = await new ToolRunner({ defaultTimeoutMs: 5, maxTimeoutMs: 5 }, { registry }).execute(request);
     assert.equal(result.kind === "failure" ? result.failure.kind : "", "timeout");
 });
-`;
-
-const evaluation = `const identifier = /^[a-z][a-z0-9._-]{0,63}$/;
+`
+      }
+    ]
+  },
+  {
+    id: "evaluation",
+    description: "Versioned offline and sampled-online evaluation runner.",
+    artifacts: [
+      {
+        path: "modules/evaluation.js",
+        source: `const identifier = /^[a-z][a-z0-9._-]{0,63}$/;
 export class EvaluatorRegistry {
     #evaluators = new Map();
     register(definition) {
@@ -456,9 +473,11 @@ export async function recordHumanFeedback(port, requestId, score, note) {
     }
     await port.record(requestId, score, note);
 }
-`;
-
-const evaluationTests = `import assert from "node:assert/strict";
+`
+      },
+      {
+        path: "modules/evaluation.test.js",
+        source: `import assert from "node:assert/strict";
 import test from "node:test";
 import { EvaluationRunner, EvaluatorRegistry, compareBaseline, recordHumanFeedback } from "./evaluation.js";
 const registry = () => new EvaluatorRegistry().register({
@@ -541,23 +560,8 @@ test("rejects duplicate evaluator and case identifiers", async () => {
     assert.throws(() => evaluators.register({ id: "exact", score: () => 1 }), /already registered/);
     await assert.rejects(() => new EvaluationRunner({ maxConcurrency: 1 }, evaluators).run({ ...suite, cases: [suite.cases[0], suite.cases[0]] }, { invoke: async () => ({ kind: "success", value: "ONE", usage: { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0 } }) }), /duplicate evaluation case/);
 });
-`;
-
-export const javaScriptRuntimeModules: readonly RuntimeModuleDefinition[] = [
-  {
-    id: "tooling",
-    description: "Registered, guarded, approval-aware tool execution.",
-    artifacts: [
-      { path: "modules/tooling.js", source: tooling },
-      { path: "modules/tooling.test.js", source: toolingTests }
-    ]
-  },
-  {
-    id: "evaluation",
-    description: "Versioned offline and sampled-online evaluation runner.",
-    artifacts: [
-      { path: "modules/evaluation.js", source: evaluation },
-      { path: "modules/evaluation.test.js", source: evaluationTests }
+`
+      }
     ]
   }
 ];

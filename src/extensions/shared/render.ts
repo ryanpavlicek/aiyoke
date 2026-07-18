@@ -7,7 +7,12 @@ import type {
   JsonValue,
   ManagedSectionMarkers
 } from "../../core/index.js";
-import { compareCodePoints, safeRelativePath } from "../../core/index.js";
+import {
+  AiyokeError,
+  compareCodePoints,
+  moduleDefinitionConflicts,
+  safeRelativePath
+} from "../../core/index.js";
 
 /** Return a JSON string with object keys sorted recursively for reproducible output. */
 export function stableJson(value: JsonValue, indent = 2): string {
@@ -130,8 +135,8 @@ export function renderSkill(module: HarnessModule, skillName: string): string {
   if (skill === undefined) return "";
   const lines = [
     `---`,
-    `name: ${skill.name}`,
-    `description: ${skill.description}`,
+    `name: ${yamlFrontmatterScalar(skill.name)}`,
+    `description: ${yamlFrontmatterScalar(skill.description)}`,
     `user-invocable: ${skill.userInvocable ? "true" : "false"}`,
     `allowed-tools: ${nativeToolNames(skill.allowedTools).join(", ")}`,
     `---`,
@@ -139,6 +144,27 @@ export function renderSkill(module: HarnessModule, skillName: string): string {
     skill.body.trimEnd()
   ];
   return `${lines.join("\n")}\n`;
+}
+
+/** Quote extension-provided frontmatter text as a single JSON-compatible YAML scalar. */
+export function yamlFrontmatterScalar(value: string): string {
+  return JSON.stringify(value);
+}
+
+export function assertUniqueModuleDefinitions(modules: readonly HarnessModule[]): void {
+  const conflicts = moduleDefinitionConflicts(modules);
+  if (conflicts.length === 0) return;
+  throw new AiyokeError(
+    "INVALID_SPEC",
+    `Harness modules contain ${conflicts.length} duplicate named definition(s).`,
+    {
+      conflicts: conflicts.map((conflict) => ({
+        kind: conflict.kind,
+        name: conflict.name,
+        modules: [...conflict.modules]
+      }))
+    }
+  );
 }
 
 const TOOL_ALIASES: Readonly<Record<string, readonly string[]>> = {
@@ -157,6 +183,7 @@ export function nativeToolNames(tools: readonly string[]): readonly string[] {
 export function uniqueSkills(
   modules: readonly HarnessModule[]
 ): readonly { module: HarnessModule; name: string }[] {
+  assertUniqueModuleDefinitions(modules);
   const result: { module: HarnessModule; name: string }[] = [];
   const seen = new Set<string>();
   for (const module of [...modules].sort((a, b) => compareCodePoints(a.id, b.id))) {
@@ -170,6 +197,7 @@ export function uniqueSkills(
 }
 
 export function renderHooks(modules: readonly HarnessModule[]): JsonObject {
+  assertUniqueModuleDefinitions(modules);
   const eventNames: Readonly<Record<HookDefinition["event"], string>> = {
     "session-start": "SessionStart",
     "pre-tool": "PreToolUse",
@@ -195,6 +223,7 @@ export function renderHooks(modules: readonly HarnessModule[]): JsonObject {
 }
 
 export function renderMcpServers(modules: readonly HarnessModule[]): JsonObject {
+  assertUniqueModuleDefinitions(modules);
   const servers: Record<string, JsonValue> = {};
   for (const server of modules
     .flatMap((module) => module.mcpServers)

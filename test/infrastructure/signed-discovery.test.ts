@@ -254,6 +254,41 @@ describe("signed extension discovery", () => {
     expect((globalThis as Record<string, unknown>)[importMarker]).toBe(1);
   });
 
+  it("emits opt-in sanitized diagnostics that distinguish trust and module failures", async () => {
+    const events: Array<{ boundary: string; stage: string; reason: string }> = [];
+    const diagnostics = { emit: (event: (typeof events)[number]) => void events.push(event) };
+    const stale = await signedFixture();
+    await writeFile(join(stale.packageRoot, "index.mjs"), "export const loader = {};\n", "utf8");
+    expect(
+      await discoverSignedExtension({
+        manifestPath: stale.manifestPath,
+        packageRoot: stale.packageRoot,
+        trust: stale.trust,
+        consent: { kind: "pending" },
+        diagnostics
+      })
+    ).toEqual(expect.objectContaining({ reason: "content-digest-mismatch" }));
+
+    const invalidModule = await signedFixture({ manifestVersion: "2.0.0" });
+    expect(
+      await discoverSignedExtension({
+        manifestPath: invalidModule.manifestPath,
+        packageRoot: invalidModule.packageRoot,
+        trust: invalidModule.trust,
+        consent: { kind: "granted", manifestDigest: invalidModule.manifestDigest },
+        diagnostics
+      })
+    ).toEqual(expect.objectContaining({ reason: "module-invalid" }));
+    expect(events).toEqual([
+      {
+        boundary: "discovery",
+        stage: "manifest-verification",
+        reason: "content-digest-mismatch"
+      },
+      { boundary: "discovery", stage: "module-import", reason: "module-invalid" }
+    ]);
+  });
+
   it("enforces package byte and file-count bounds before import", async () => {
     const fixture = await signedFixture();
     const results = await Promise.all([

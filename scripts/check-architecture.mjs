@@ -4,8 +4,9 @@
  * Check the dependency direction of the source tree.
  *
  * This intentionally operates on the TypeScript AST instead of regular
- * expressions.  That keeps comments, strings, and dynamic `import()` calls
- * from being mistaken for static dependencies.  The checker is a small,
+ * expressions. That keeps comments and strings from being mistaken for
+ * dependencies while allowing dynamic imports to be governed explicitly.
+ * The checker is a small,
  * dependency-free policy module from the repository's point of view: the
  * TypeScript compiler is already a development dependency used by the build.
  */
@@ -19,9 +20,7 @@ const EXTENSION_CATEGORIES = new Set(["targets", "languages", "frameworks", "pac
 const compareStable = (left, right) => (left === right ? 0 : left < right ? -1 : 1);
 
 /**
- * Allowed static dependency edges.  A source file may always import a
- * third-party package; these rules only apply when an import resolves into
- * this repository's `src` directory.
+ * Allowed repository-local dependency edges.
  */
 export const ALLOWED_IMPORTS = Object.freeze({
   core: new Set(["core"]),
@@ -99,6 +98,39 @@ const HEAVY_PUBLIC_API_LAYERS = new Set([
   "cli"
 ]);
 
+const PORTABLE_LAYERS = new Set([
+  "core",
+  "extension-sdk",
+  "application",
+  "extensions-shared",
+  "extensions",
+  "extensions-targets",
+  "extensions-languages",
+  "extensions-frameworks",
+  "extensions-packs",
+  "extensions-runtimes",
+  "shared",
+  "public-api",
+  "cli"
+]);
+
+const RUNTIME_IMPORT_EXPRESSION = "<runtime-import-expression>";
+const DYNAMIC_IMPORT_ALLOWLIST = Object.freeze({
+  "src/index.ts": new Set([
+    "./engine/index.js",
+    "./engine/diagnostics.js",
+    "./infrastructure/discovery/index.js",
+    "./infrastructure/isolation/index.js"
+  ]),
+  "src/interfaces/cli/main.ts": new Set(["../../engine/index.js"]),
+  "src/infrastructure/discovery/node-signed-discovery.ts": new Set([RUNTIME_IMPORT_EXPRESSION]),
+  "src/infrastructure/isolation/node-renderer-isolation.ts": new Set([RUNTIME_IMPORT_EXPRESSION])
+});
+
+const TYPE_IMPORT_ALLOWLIST = Object.freeze({
+  "src/index.ts": new Set(["./engine/index.js"])
+});
+
 /**
  * @typedef {{file:string, fromLayer:string, importedFile:string, toLayer:string, specifier:string, message:string}} ArchitectureViolation
  */
@@ -154,13 +186,17 @@ export function classifyLayer(file, srcRoot) {
 
 /**
  * Extract static module specifiers from a TypeScript/JavaScript file.
- * Dynamic `import()` is deliberately excluded because the public API and
- * engine use it as the lazy-loading boundary.
+ * Dynamic `import()` is extracted separately because it has a narrow,
+ * file-specific allowlist.
  * @param {string} source
  * @param {string} fileName
  * @returns {string[]}
  */
 export function extractStaticImports(source, fileName = "source.ts") {
+  return extractStaticDependencies(source, fileName).map(({ specifier }) => specifier);
+}
+
+function extractStaticDependencies(source, fileName = "source.ts") {
   const sourceFile = ts.createSourceFile(
     fileName,
     source,
@@ -171,19 +207,41 @@ export function extractStaticImports(source, fileName = "source.ts") {
   const imports = [];
   const visit = (node) => {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-      imports.push(node.moduleSpecifier.text);
+      const clause = node.importClause;
+      const namedTypeOnly =
+        clause?.name === undefined &&
+        clause?.namedBindings !== undefined &&
+        ts.isNamedImports(clause.namedBindings) &&
+        clause.namedBindings.elements.every((element) => element.isTypeOnly);
+      imports.push({
+        specifier: node.moduleSpecifier.text,
+        typeOnly: clause?.isTypeOnly === true || namedTypeOnly
+      });
     } else if (
       ts.isExportDeclaration(node) &&
       node.moduleSpecifier &&
       ts.isStringLiteral(node.moduleSpecifier)
     ) {
-      imports.push(node.moduleSpecifier.text);
+      const namedTypeOnly =
+        node.exportClause !== undefined &&
+        ts.isNamedExports(node.exportClause) &&
+        node.exportClause.elements.every((element) => element.isTypeOnly);
+      imports.push({
+        specifier: node.moduleSpecifier.text,
+        typeOnly: node.isTypeOnly || namedTypeOnly
+      });
     } else if (
       ts.isImportEqualsDeclaration(node) &&
       ts.isExternalModuleReference(node.moduleReference) &&
       ts.isStringLiteral(node.moduleReference.expression)
     ) {
-      imports.push(node.moduleReference.expression.text);
+      imports.push({ specifier: node.moduleReference.expression.text, typeOnly: node.isTypeOnly });
+    } else if (
+      ts.isImportTypeNode(node) &&
+      ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteral(node.argument.literal)
+    ) {
+      imports.push({ specifier: node.argument.literal.text, typeOnly: true });
     } else if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
@@ -191,7 +249,39 @@ export function extractStaticImports(source, fileName = "source.ts") {
       node.arguments.length === 1 &&
       ts.isStringLiteral(node.arguments[0])
     ) {
-      imports.push(node.arguments[0].text);
+      imports.push({ specifier: node.arguments[0].text, typeOnly: false });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return imports;
+}
+
+/**
+ * Extract dynamic import specifiers. Non-literal runtime module URLs are
+ * represented by a sentinel so only designated plugin-loading boundaries may
+ * use them.
+ * @param {string} source
+ * @param {string} fileName
+ * @returns {string[]}
+ */
+export function extractDynamicImports(source, fileName = "source.ts") {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    fileName.endsWith(".tsx") || fileName.endsWith(".jsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  const imports = [];
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments.length === 1
+    ) {
+      const argument = node.arguments[0];
+      imports.push(ts.isStringLiteral(argument) ? argument.text : RUNTIME_IMPORT_EXPRESSION);
     }
     ts.forEachChild(node, visit);
   };
@@ -244,14 +334,29 @@ export function checkArchitecture(options = {}) {
     const fromLayer = classifyLayer(file, srcRoot);
     const allowed = ALLOWED_IMPORTS[fromLayer] ?? new Set();
     const source = fs.readFileSync(file, "utf8");
-    for (const specifier of extractStaticImports(source, file)) {
+    const relativeFile = path.relative(root, file).replaceAll(path.sep, "/");
+    const typeAllowed = TYPE_IMPORT_ALLOWLIST[relativeFile];
+    for (const { specifier, typeOnly } of extractStaticDependencies(source, file)) {
+      if (typeOnly && typeAllowed?.has(specifier) === true) continue;
+      if (!specifier.startsWith(".") && !specifier.startsWith("/")) {
+        if (PORTABLE_LAYERS.has(fromLayer)) {
+          violations.push({
+            file: relativeFile,
+            fromLayer,
+            importedFile: specifier,
+            toLayer: "external",
+            specifier,
+            message: `${fromLayer} must remain portable and may not import bare modules`
+          });
+        }
+        continue;
+      }
       const importedFile = resolveImport(specifier, file, srcRoot);
       if (importedFile === undefined) continue;
       const toLayer = classifyLayer(importedFile, srcRoot);
       const disallowed = !allowed.has(toLayer);
       const publicHeavyImport = fromLayer === "public-api" && HEAVY_PUBLIC_API_LAYERS.has(toLayer);
       if (!disallowed && !publicHeavyImport) continue;
-      const relativeFile = path.relative(root, file).replaceAll(path.sep, "/");
       const relativeImported = path.relative(root, importedFile).replaceAll(path.sep, "/");
       let message = `${fromLayer} may not statically import ${toLayer}`;
       if (publicHeavyImport) message = "the public API must lazy-load heavy layers";
@@ -262,6 +367,19 @@ export function checkArchitecture(options = {}) {
         toLayer,
         specifier,
         message
+      });
+    }
+
+    const dynamicAllowed = DYNAMIC_IMPORT_ALLOWLIST[relativeFile];
+    for (const specifier of extractDynamicImports(source, file)) {
+      if (dynamicAllowed?.has(specifier) === true) continue;
+      violations.push({
+        file: relativeFile,
+        fromLayer,
+        importedFile: specifier,
+        toLayer: "dynamic",
+        specifier,
+        message: "dynamic imports are restricted to explicit lazy or plugin-loading boundaries"
       });
     }
   }

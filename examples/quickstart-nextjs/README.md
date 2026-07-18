@@ -72,12 +72,14 @@ AGENTS.md
 CLAUDE.md
 aiyoke-runtime/typescript/README.md
 aiyoke-runtime/typescript/capabilities.json
+aiyoke-runtime/typescript/conformance.json
 aiyoke-runtime/typescript/integrations/nextjs.ts
 aiyoke-runtime/typescript/modules/evaluation.test.ts
 aiyoke-runtime/typescript/modules/evaluation.ts
 aiyoke-runtime/typescript/modules/tooling.test.ts
 aiyoke-runtime/typescript/modules/tooling.ts
 aiyoke-runtime/typescript/policy.json
+aiyoke-runtime/typescript/policy.ts
 aiyoke-runtime/typescript/providers/responses.test.ts
 aiyoke-runtime/typescript/providers/responses.ts
 aiyoke-runtime/typescript/runtime.ts

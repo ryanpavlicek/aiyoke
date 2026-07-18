@@ -57,6 +57,8 @@ export {
 } from "./runtime-capability.js";
 export {
   type ExtensionConsent,
+  type ExtensionDiagnosticEvent,
+  type ExtensionDiagnosticSink,
   type ExtensionTrustRoot,
   type ExtensionTrustStore,
   type ManifestCryptoPort,

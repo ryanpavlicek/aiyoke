@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-// The checker is a JavaScript CLI module and intentionally has no runtime
-// dependency on the application. Vitest can still exercise its exported
-// policy API directly.
-// @ts-expect-error JavaScript helper has no generated declaration file.
-import { checkArchitecture, extractStaticImports } from "../../scripts/check-architecture.mjs";
+import {
+  checkArchitecture,
+  extractDynamicImports,
+  extractStaticImports
+} from "../../scripts/check-architecture.mjs";
 
 const temporaryRoots: string[] = [];
 
@@ -39,14 +39,14 @@ describe("architecture checker", () => {
         'import type { Contract } from "../extension-sdk/contracts.js"; export type Service = Contract;',
       "infrastructure/filesystem/store.ts":
         'import type { Service } from "../../application/service.js"; export type Store = Service;',
-      "engine/compose.ts":
+      "engine/index.ts":
         'import type { Store } from "../infrastructure/filesystem/store.js"; export type Engine = Store;',
       "extensions/shared/helpers.ts":
         'import type { Contract } from "../../extension-sdk/contracts.js"; export type Helper = Contract;',
       "extensions/targets/demo.ts":
         'import type { Helper } from "../shared/helpers.js"; export type Target = Helper;',
       "index.ts":
-        'export type { Contract } from "./extension-sdk/contracts.js"; export async function load() { return import("./engine/compose.js"); }'
+        'export type { Contract } from "./extension-sdk/contracts.js"; export type { Engine } from "./engine/index.js"; export async function load() { return import("./engine/index.js"); }'
     });
 
     const result = checkArchitecture({ root });
@@ -82,16 +82,59 @@ describe("architecture checker", () => {
     ]);
   });
 
-  it("extracts static imports but ignores comments and dynamic imports", () => {
+  it("extracts static and dynamic imports without matching comments or strings", () => {
     const imports = extractStaticImports(
       `// import bad from "./comment";
        import type { Core } from "./core.js";
        export { Core as Value } from "./core.js";
+       type Engine = import("./engine.js").Engine;
        const lazy = import("./heavy.js");
        const text = "import nope from './string'";`,
       "fixture.ts"
     );
-    expect(imports).toEqual(["./core.js", "./core.js"]);
+    expect(imports).toEqual(["./core.js", "./core.js", "./engine.js"]);
+    expect(
+      extractDynamicImports(
+        `const literal = import("./heavy.js"); const runtime = import(url.href);`,
+        "fixture.ts"
+      )
+    ).toEqual(["./heavy.js", "<runtime-import-expression>"]);
+  });
+
+  it("rejects bare imports from portable layers but permits them in adapters", () => {
+    const root = fixture({
+      "core/value.ts": 'import { readFile } from "node:fs/promises"; export { readFile };',
+      "application/service.ts": 'import yaml from "yaml"; export { yaml };',
+      "infrastructure/config/store.ts": 'import { parse } from "yaml"; export { parse };'
+    });
+
+    const result = checkArchitecture({ root });
+    expect(
+      result.violations.map(
+        ({ fromLayer, toLayer, specifier }) => `${fromLayer}->${toLayer}:${specifier}`
+      )
+    ).toEqual(["application->external:yaml", "core->external:node:fs/promises"]);
+  });
+
+  it("rejects dynamic imports outside exact lazy and plugin boundaries", () => {
+    const root = fixture({
+      "core/value.ts": 'export const load = () => import("./other.js");',
+      "core/other.ts": "export const other = true;",
+      "engine/compose.ts": 'export const load = () => import("../core/other.js");',
+      "index.ts": 'export const load = () => import("./unexpected.js");',
+      "unexpected.ts": "export const unexpected = true;"
+    });
+
+    const result = checkArchitecture({ root });
+    expect(
+      result.violations.map(
+        ({ file, specifier }: { file: string; specifier: string }) => `${file}:${specifier}`
+      )
+    ).toEqual([
+      "src/core/value.ts:./other.js",
+      "src/engine/compose.ts:../core/other.js",
+      "src/index.ts:./unexpected.js"
+    ]);
   });
 
   it("keeps infrastructure and engine independent from interfaces", () => {

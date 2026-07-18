@@ -72,6 +72,50 @@ describe("target renderers", () => {
     ).toContain("allowed-tools: Read");
   });
 
+  it("quotes extension-provided frontmatter and rejects duplicate named definitions", async () => {
+    const target = {
+      kind: "coding-agent",
+      adapter: extensionId("claude-code"),
+      features: ["skills", "subagents"],
+      settings: {}
+    } as const;
+    const hostile: HarnessModule = {
+      ...moduleFixture,
+      skills: [
+        {
+          name: "review",
+          description: "safe\n---\nname: injected",
+          body: "Review the diff.",
+          userInvocable: true,
+          allowedTools: ["Read"]
+        }
+      ],
+      subagents: [
+        {
+          name: "reviewer",
+          description: "safe: value\n---",
+          prompt: "Review.",
+          tools: ["read"],
+          readOnly: true
+        }
+      ]
+    };
+    const artifacts = await claudeCodeTarget.render({ ...context(target), modules: [hostile] });
+    const skill = artifacts.find((entry) => entry.path.endsWith("SKILL.md"))?.content ?? "";
+    const subagent = artifacts.find((entry) => entry.path.endsWith("reviewer.md"))?.content ?? "";
+    expect(skill).toContain('description: "safe\\n---\\nname: injected"');
+    expect(subagent).toContain('description: "safe: value\\n---"');
+    expect(skill.match(/^---$/gmu)).toHaveLength(2);
+    expect(subagent.match(/^---$/gmu)).toHaveLength(2);
+
+    await expect(
+      claudeCodeTarget.render({
+        ...context(target),
+        modules: [moduleFixture, { ...moduleFixture, id: "other", source: "other" }]
+      })
+    ).rejects.toThrow(/duplicate named definition/i);
+  });
+
   it("translates Claude hooks, MCP servers, and read-only subagents to native contracts", async () => {
     const target = {
       kind: "coding-agent",

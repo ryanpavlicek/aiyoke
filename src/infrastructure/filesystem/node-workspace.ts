@@ -12,10 +12,9 @@ import {
   writeFile
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { WorkspacePort } from "../../application/index.js";
+import type { WorkspacePort, WorkspaceWrite } from "../../application/index.js";
+import { isShareableWorkspacePath } from "../../application/workspace-snapshot-policy.js";
 import { AiyokeError, compareCodePoints, safeRelativePath } from "../../core/index.js";
-
-const EXCLUDED_ROOT_DIRECTORIES = new Set([".git", "node_modules", "dist", "coverage"]);
 
 function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -45,6 +44,20 @@ export interface NodeWorkspaceOptions {
     checkpoint: AtomicWriteCheckpoint,
     context: { readonly path: string; readonly parent: string; readonly temporary?: string }
   ) => Promise<void>;
+}
+
+interface StagedWrite {
+  readonly write: WorkspaceWrite;
+  readonly target: string;
+  readonly parent: string;
+  readonly verifiedParent: string;
+  readonly temporary: string;
+}
+
+interface CommitRecord extends StagedWrite {
+  readonly backup?: string;
+  backedUp: boolean;
+  installed: boolean;
 }
 
 export class NodeWorkspace implements WorkspacePort {
@@ -144,42 +157,142 @@ export class NodeWorkspace implements WorkspacePort {
   }
 
   async writeAtomic(path: string, content: string, executable: boolean): Promise<void> {
-    const target = await this.#safeTarget(path);
+    const staged = await this.#stageWrite({ path, content, executable, previous: undefined });
+    try {
+      const currentParent = await this.#verifiedDirectory(staged.parent, path);
+      if (!samePath(currentParent, staged.verifiedParent)) {
+        throw new AiyokeError(
+          "INVALID_PATH",
+          `Refusing atomic write after directory substitution for ${path}.`,
+          { path }
+        );
+      }
+      await rename(staged.temporary, staged.target);
+    } catch (error) {
+      await rm(staged.temporary, { force: true }).catch(() => undefined);
+      if (error instanceof AiyokeError) throw error;
+      throw new AiyokeError("WORKSPACE_IO", `Could not write ${path} atomically.`, {
+        path,
+        cause: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async writeBatchAtomic(writes: readonly WorkspaceWrite[]): Promise<void> {
+    if (writes.length === 0) return;
+    const staged: StagedWrite[] = [];
+    const committed: CommitRecord[] = [];
+    try {
+      for (const write of writes) staged.push(await this.#stageWrite(write));
+      for (const write of writes) {
+        const current = await this.read(write.path);
+        if (current !== write.previous) {
+          throw new AiyokeError(
+            "PLAN_CONFLICT",
+            `${write.path} changed while the plan transaction was staged; create a new plan before applying.`,
+            { path: write.path }
+          );
+        }
+      }
+      for (const item of staged) {
+        const currentParent = await this.#verifiedDirectory(item.parent, item.write.path);
+        if (!samePath(currentParent, item.verifiedParent)) {
+          throw new AiyokeError(
+            "INVALID_PATH",
+            `Refusing plan transaction after directory substitution for ${item.write.path}.`,
+            { path: item.write.path }
+          );
+        }
+        const backup =
+          item.write.previous === undefined
+            ? undefined
+            : join(item.parent, `.aiyoke-${randomUUID()}.rollback`);
+        const record: CommitRecord = {
+          ...item,
+          ...(backup === undefined ? {} : { backup }),
+          backedUp: false,
+          installed: false
+        };
+        committed.push(record);
+        if (backup !== undefined) {
+          await rename(item.target, backup);
+          record.backedUp = true;
+        }
+        await rename(item.temporary, item.target);
+        record.installed = true;
+      }
+      await Promise.all(
+        committed.flatMap((record) =>
+          record.backup === undefined
+            ? []
+            : [rm(record.backup, { force: true }).catch(() => undefined)]
+        )
+      );
+    } catch (error) {
+      const rollbackFailures: string[] = [];
+      for (const record of [...committed].reverse()) {
+        try {
+          const currentParent = await this.#verifiedDirectory(record.parent, record.write.path);
+          if (!samePath(currentParent, record.verifiedParent)) {
+            throw new Error("parent directory changed during rollback");
+          }
+          if (record.installed) await rm(record.target, { force: true });
+          if (record.backedUp && record.backup !== undefined) {
+            await rename(record.backup, record.target);
+          }
+        } catch (rollbackError) {
+          rollbackFailures.push(
+            `${record.write.path}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+          );
+        }
+      }
+      await Promise.all(
+        staged.map((item) => rm(item.temporary, { force: true }).catch(() => undefined))
+      );
+      if (rollbackFailures.length > 0) {
+        throw new AiyokeError("WORKSPACE_IO", "Could not roll back a failed plan transaction.", {
+          rollbackFailures
+        });
+      }
+      if (error instanceof AiyokeError) throw error;
+      throw new AiyokeError("WORKSPACE_IO", "Could not commit the plan transaction.", {
+        cause: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async #stageWrite(write: WorkspaceWrite): Promise<StagedWrite> {
+    const target = await this.#safeTarget(write.path);
     const parent = dirname(target);
     await this.#ensureDirectories(parent);
-    const verifiedParent = await this.#verifiedDirectory(parent, path);
-    await this.options.onAtomicWriteCheckpoint?.("directories-verified", { path, parent });
+    const verifiedParent = await this.#verifiedDirectory(parent, write.path);
+    await this.options.onAtomicWriteCheckpoint?.("directories-verified", {
+      path: write.path,
+      parent
+    });
     const temporary = join(parent, `.aiyoke-${randomUUID()}.tmp`);
     try {
-      await writeFile(temporary, content, { encoding: "utf8", flag: "wx" });
-      if (executable) await chmod(temporary, 0o755);
+      await writeFile(temporary, write.content, { encoding: "utf8", flag: "wx" });
+      if (write.executable) await chmod(temporary, 0o755);
       const stagedPath = await realpath(temporary);
       if (!inside(this.root, stagedPath) || !samePath(dirname(stagedPath), verifiedParent)) {
         throw new AiyokeError(
           "INVALID_PATH",
-          `Refusing atomic write after directory substitution for ${path}.`,
-          { path }
+          `Refusing atomic write after directory substitution for ${write.path}.`,
+          { path: write.path }
         );
       }
       await this.options.onAtomicWriteCheckpoint?.("temporary-staged", {
-        path,
+        path: write.path,
         parent,
         temporary
       });
-      const currentParent = await this.#verifiedDirectory(parent, path);
-      if (!samePath(currentParent, verifiedParent)) {
-        throw new AiyokeError(
-          "INVALID_PATH",
-          `Refusing atomic write after directory substitution for ${path}.`,
-          { path }
-        );
-      }
-      await rename(temporary, target);
+      return { write, target, parent, verifiedParent, temporary };
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);
       if (error instanceof AiyokeError) throw error;
-      throw new AiyokeError("WORKSPACE_IO", `Could not write ${path} atomically.`, {
-        path,
+      throw new AiyokeError("WORKSPACE_IO", `Could not stage ${write.path} atomically.`, {
+        path: write.path,
         cause: error instanceof Error ? error.message : String(error)
       });
     }
@@ -256,15 +369,11 @@ export class NodeWorkspace implements WorkspacePort {
         const relativePath = relative(root, absolute).replaceAll(sep, "/");
         if (entry.isSymbolicLink()) continue;
         if (entry.isDirectory()) {
-          const isRootDirectory = !relativePath.includes("/");
-          if (
-            (isRootDirectory && EXCLUDED_ROOT_DIRECTORIES.has(entry.name)) ||
-            relativePath === ".aiyoke/cache"
-          ) {
+          if (!isShareableWorkspacePath(relativePath)) {
             continue;
           }
           await visit(absolute);
-        } else if (entry.isFile()) {
+        } else if (entry.isFile() && isShareableWorkspacePath(relativePath)) {
           result.push(relativePath);
         }
       }

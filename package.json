@@ -1,6 +1,6 @@
 {
   "name": "aiyoke",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Deterministic, extensible AI harness compiler for Claude Code, ChatGPT/Codex, Grok/Grok Build, and OpenRouter.",
   "type": "module",
   "private": false,
@@ -54,6 +54,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "generate:runtime-js": "pnpm build && node scripts/generate-javascript-runtime-templates.mjs --write && pnpm lint:fix",
+    "check:runtime-js": "pnpm build && node scripts/generate-javascript-runtime-templates.mjs",
     "check:static": "pnpm lint && pnpm typecheck && pnpm architecture && pnpm test:docs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check .",
@@ -71,7 +73,7 @@
     "security:audit": "pnpm audit --prod --audit-level high",
     "test:live": "pnpm build && node --use-system-ca --env-file-if-exists=.env scripts/live-provider-smoke.mjs",
     "architecture": "node scripts/check-architecture.mjs",
-    "check": "pnpm check:static && pnpm test:coverage && pnpm build && pnpm test:isolation-dist",
+    "check": "pnpm check:static && pnpm test:coverage && pnpm check:runtime-js && pnpm test:isolation-dist",
     "dev": "tsx src/cli.ts",
     "prepack": "pnpm check"
   },

@@ -1,5 +1,6 @@
 import { pythonIntegrations } from "./integrations/python.js";
 import { pythonRuntimeModules } from "./modules/python.js";
+import { pythonPolicyArtifact } from "./policy.js";
 import { pythonProviders } from "./providers/python.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
@@ -95,7 +96,6 @@ class HumanFeedbackPort(Protocol):
 class GuardStage(str, Enum):
     INPUT = "input"
     OUTPUT = "output"
-    TOOL = "tool"
 
 
 @dataclass(frozen=True)
@@ -159,7 +159,8 @@ class RuntimeOptions:
     max_concurrency: int
     max_batch_size: int
     circuit_failure_threshold: int
-    circuit_reset_after_seconds: float
+    circuit_reset_after_ms: int
+    circuit_half_open_max_attempts: int
     max_estimated_cost_usd: float | None = None
 
 
@@ -238,27 +239,40 @@ class CircuitState(str, Enum):
 
 
 class CircuitBreaker:
-    def __init__(self, failure_threshold: int, reset_after_seconds: float) -> None:
-        if failure_threshold < 1 or reset_after_seconds <= 0:
+    def __init__(
+        self, failure_threshold: int, reset_after_ms: int, half_open_max_attempts: int = 1
+    ) -> None:
+        if failure_threshold < 1 or reset_after_ms <= 0 or half_open_max_attempts < 1:
             raise ValueError("circuit breaker limits must be positive")
         self._failure_threshold = failure_threshold
-        self._reset_after_seconds = reset_after_seconds
+        self._reset_after_seconds = reset_after_ms / 1_000
+        self._half_open_max_attempts = half_open_max_attempts
         self._state = CircuitState.CLOSED
         self._failures = 0
         self._opened_at = 0.0
+        self._half_open_attempts = 0
 
     def state(self, now: float | None = None) -> CircuitState:
         current = monotonic() if now is None else now
         if self._state is CircuitState.OPEN and current - self._opened_at >= self._reset_after_seconds:
             self._state = CircuitState.HALF_OPEN
+            self._half_open_attempts = 0
         return self._state
 
     def allow(self, now: float | None = None) -> bool:
-        return self.state(now) is not CircuitState.OPEN
+        state = self.state(now)
+        if state is CircuitState.OPEN:
+            return False
+        if state is CircuitState.HALF_OPEN:
+            if self._half_open_attempts >= self._half_open_max_attempts:
+                return False
+            self._half_open_attempts += 1
+        return True
 
     def success(self) -> None:
         self._state = CircuitState.CLOSED
         self._failures = 0
+        self._half_open_attempts = 0
 
     def failure(self, now: float | None = None) -> None:
         current = monotonic() if now is None else now
@@ -266,6 +280,7 @@ class CircuitBreaker:
         if self._state is CircuitState.HALF_OPEN or self._failures >= self._failure_threshold:
             self._state = CircuitState.OPEN
             self._opened_at = current
+            self._half_open_attempts = 0
 
 
 class HarnessRuntime:
@@ -288,6 +303,12 @@ class HarnessRuntime:
             raise ValueError("timeout and max attempts must be positive")
         if options.max_concurrency < 1 or options.max_batch_size < 1:
             raise ValueError("concurrency and batch limits must be positive")
+        if (
+            options.circuit_failure_threshold < 1
+            or options.circuit_reset_after_ms <= 0
+            or options.circuit_half_open_max_attempts < 1
+        ):
+            raise ValueError("circuit breaker limits must be positive")
         self.options = options
         self.adapters = adapters
         self.guards = guards
@@ -544,7 +565,8 @@ class HarnessRuntime:
         if circuit is None:
             circuit = CircuitBreaker(
                 self.options.circuit_failure_threshold,
-                self.options.circuit_reset_after_seconds,
+                self.options.circuit_reset_after_ms,
+                self.options.circuit_half_open_max_attempts,
             )
             self._circuits[route] = circuit
         return circuit
@@ -582,8 +604,11 @@ class HarnessRuntime:
 `;
 
 const TEST_SOURCE = `import asyncio
+import json
 import unittest
+from pathlib import Path
 
+from policy import RUNTIME_OPTIONS
 from runtime import (
     AdapterRegistry,
     CircuitBreaker,
@@ -607,6 +632,13 @@ from runtime import (
 )
 
 
+CONFORMANCE = json.loads(Path(__file__).with_name("conformance.json").read_text(encoding="utf-8"))
+POLICY = json.loads(Path(__file__).with_name("policy.json").read_text(encoding="utf-8"))
+assert CONFORMANCE["schemaVersion"] == 1
+assert CONFORMANCE["runtime"]["guardStages"] == ["input", "output"]
+assert RUNTIME_OPTIONS.timeout_ms == POLICY["policy"]["reliability"]["timeoutMs"]
+
+
 class RuntimePrimitivesTest(unittest.TestCase):
     def setUp(self) -> None:
         self.request = ModelRequest("request-1", "primary", "v1", {}, 10, 100, {})
@@ -623,7 +655,7 @@ class RuntimePrimitivesTest(unittest.TestCase):
         self.assertEqual(failure.kind, FailureKind.BUDGET_EXHAUSTED)
 
     def test_circuit_transitions(self) -> None:
-        breaker = CircuitBreaker(2, 0.1)
+        breaker = CircuitBreaker(2, 100)
         breaker.failure(0.0)
         self.assertTrue(breaker.allow(0.01))
         breaker.failure(0.02)
@@ -632,6 +664,14 @@ class RuntimePrimitivesTest(unittest.TestCase):
         self.assertEqual(breaker.state(0.121), CircuitState.HALF_OPEN)
         breaker.success()
         self.assertTrue(breaker.allow(0.13))
+
+    def test_half_open_probes_are_bounded(self) -> None:
+        breaker = CircuitBreaker(1, 100, 1)
+        breaker.failure(0.0)
+        self.assertTrue(breaker.allow(0.1))
+        self.assertFalse(breaker.allow(0.1))
+        breaker.success()
+        self.assertTrue(breaker.allow(0.11))
 
 
 class RuntimeFacadeTest(unittest.IsolatedAsyncioTestCase):
@@ -649,8 +689,41 @@ class RuntimeFacadeTest(unittest.IsolatedAsyncioTestCase):
             max_concurrency=2,
             max_batch_size=4,
             circuit_failure_threshold=3,
-            circuit_reset_after_seconds=1,
+            circuit_reset_after_ms=1_000,
+            circuit_half_open_max_attempts=1,
         )
+
+    async def test_shared_conformance_options_fail_during_construction(self) -> None:
+        fields = {
+            "circuitFailureThreshold": "circuit_failure_threshold",
+            "circuitResetAfterMs": "circuit_reset_after_ms",
+            "circuitHalfOpenMaxAttempts": "circuit_half_open_max_attempts",
+        }
+        for vector in CONFORMANCE["optionCases"]:
+            values = {**self.options.__dict__, fields[vector["field"]]: vector["value"]}
+            with self.assertRaises(ValueError):
+                HarnessRuntime(RuntimeOptions(**values), AdapterRegistry())
+
+    async def test_synchronous_adapter_throw_is_contained(self) -> None:
+        self.assertEqual(CONFORMANCE["runtime"]["synchronousAdapterThrow"], "provider-failure")
+
+        class ThrowingAdapter:
+            def invoke(self, request):
+                raise RuntimeError("synchronous adapter failure")
+
+        runtime = HarnessRuntime(
+            RuntimeOptions(
+                **{
+                    **self.options.__dict__,
+                    "fallback_routes": [],
+                    "retry": RetryOptions(1, 10, 100, 0),
+                }
+            ),
+            AdapterRegistry().register("primary", ThrowingAdapter()),
+        )
+        result = await runtime.execute(self.request)
+        self.assertIsInstance(result, ModelFailure)
+        self.assertEqual(result.kind, FailureKind.PROVIDER)
 
     async def test_retry_fallback_repair_and_redacted_events(self) -> None:
         events = []
@@ -875,7 +948,8 @@ class RuntimeFacadeTest(unittest.IsolatedAsyncioTestCase):
             max_concurrency=4,
             max_batch_size=32,
             circuit_failure_threshold=2,
-            circuit_reset_after_seconds=1,
+            circuit_reset_after_ms=1_000,
+            circuit_half_open_max_attempts=1,
         )
         requests = [
             ModelRequest(
@@ -949,7 +1023,7 @@ class RuntimeFacadeTest(unittest.IsolatedAsyncioTestCase):
             **{
                 **pressure_options.__dict__,
                 "circuit_failure_threshold": 2,
-                "circuit_reset_after_seconds": 1,
+                "circuit_reset_after_ms": 1_000,
             }
         )
         storm_runtime = HarnessRuntime(
@@ -987,6 +1061,7 @@ export const pythonRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "test_runtime.py",
   testSource: TEST_SOURCE,
+  policyArtifact: pythonPolicyArtifact,
   modules: pythonRuntimeModules,
   integrations: pythonIntegrations,
   providers: pythonProviders

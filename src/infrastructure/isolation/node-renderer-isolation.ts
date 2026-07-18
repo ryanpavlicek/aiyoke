@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { extensionArtifactPath } from "../../application/artifact-policy.js";
+import { isShareableWorkspacePath } from "../../application/workspace-snapshot-policy.js";
 import {
   type ArtifactIntent,
   canonicalJson,
@@ -94,8 +96,23 @@ type WorkerResponse =
       readonly protocolVersion: typeof RENDERER_ISOLATION_PROTOCOL_VERSION;
       readonly requestId: string;
       readonly kind: "failed";
-      readonly reason: "output-limit" | "renderer-failed";
+      readonly reason:
+        | "output-limit"
+        | "protocol-failed"
+        | "package-failed"
+        | "module-failed"
+        | "load-failed"
+        | "render-failed"
+        | "artifacts-failed";
     };
+
+function diagnostic(options: IsolatedSignedExtensionOptions, stage: string, reason: string): void {
+  try {
+    options.diagnostics?.emit({ boundary: "isolation", stage, reason });
+  } catch {
+    // Diagnostics are opt-in and never alter isolation decisions.
+  }
+}
 
 function record(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -111,7 +128,11 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[]): voi
   }
 }
 
-function validateArtifacts(value: unknown, maxArtifacts: number): readonly ArtifactIntent[] {
+function validateArtifacts(
+  value: unknown,
+  maxArtifacts: number,
+  lockFile: string
+): readonly ArtifactIntent[] {
   if (!Array.isArray(value) || value.length > maxArtifacts) {
     throw new RangeError("Renderer returned an invalid artifact count.");
   }
@@ -132,7 +153,7 @@ function validateArtifacts(value: unknown, maxArtifacts: number): readonly Artif
     ) {
       throw new TypeError("Renderer returned an invalid artifact.");
     }
-    const path = safeRelativePath(artifact.path);
+    const path = extensionArtifactPath(artifact.path, lockFile);
     if (paths.has(path)) throw new TypeError("Renderer returned duplicate artifact paths.");
     paths.add(path);
     const base = {
@@ -201,10 +222,13 @@ async function serializeWorkspace(
   workspace: WorkspaceSnapshot,
   limits: ResolvedLimits
 ): Promise<SerializedWorkspace> {
-  if (workspace.files.length > limits.maxWorkspaceFiles) {
+  const files = workspace.files
+    .map(safeRelativePath)
+    .filter(isShareableWorkspacePath)
+    .sort(compareCodePoints);
+  if (files.length > limits.maxWorkspaceFiles) {
     throw new RangeError("Workspace file count exceeds the isolation input limit.");
   }
-  const files = workspace.files.map(safeRelativePath).sort(compareCodePoints);
   if (new Set(files).size !== files.length) {
     throw new TypeError("Workspace file list contains duplicates.");
   }
@@ -286,6 +310,7 @@ async function runRendererChild(): Promise<void> {
   workerKeepAlive = setInterval(() => undefined, 1_000);
   process.once("message", async (message: unknown) => {
     let request: WorkerRequest | undefined;
+    let stage = "protocol" as "protocol" | "package" | "module" | "load" | "render" | "artifacts";
     try {
       if (typeof message !== "string") throw new TypeError("Invalid protocol message.");
       request = JSON.parse(message) as WorkerRequest;
@@ -296,6 +321,7 @@ async function runRendererChild(): Promise<void> {
       ) {
         throw new TypeError("Invalid protocol version.");
       }
+      stage = "package";
       const digest = await digestExtensionPackage(request.packageRoot, {
         ...(request.maxPackageBytes === undefined ? {} : { maxBytes: request.maxPackageBytes }),
         ...(request.maxPackageFiles === undefined ? {} : { maxFiles: request.maxPackageFiles })
@@ -308,6 +334,7 @@ async function runRendererChild(): Promise<void> {
       const entrypoint = await realpath(request.entrypointPath);
       const url = pathToFileURL(entrypoint);
       url.searchParams.set("aiyoke-isolated-content", digest);
+      stage = "module";
       const module = (await import(url.href)) as Readonly<Record<string, unknown>>;
       const loader = module[request.exportName];
       if (
@@ -316,12 +343,14 @@ async function runRendererChild(): Promise<void> {
       ) {
         throw new TypeError("Loader does not match the signed descriptor.");
       }
+      stage = "load";
       const extension: AiyokeExtension = await loader.load();
       if (canonicalJson(extension.descriptor) !== canonicalJson(request.descriptor)) {
         throw new TypeError("Extension does not match the signed descriptor.");
       }
       const workspace = reconstructedWorkspace(request.invocation.context.workspace);
       let artifacts: readonly ArtifactIntent[];
+      stage = "render";
       if (request.invocation.kind === "target-render") {
         if (extension.descriptor.kind !== "target") throw new TypeError("Renderer kind mismatch.");
         artifacts = await (extension as TargetExtension).render({
@@ -335,12 +364,17 @@ async function runRendererChild(): Promise<void> {
           workspace
         });
       }
+      stage = "artifacts";
       sendWorkerResponse(
         {
           protocolVersion: RENDERER_ISOLATION_PROTOCOL_VERSION,
           requestId: request.requestId,
           kind: "rendered",
-          artifacts: validateArtifacts(artifacts, request.maxArtifacts)
+          artifacts: validateArtifacts(
+            artifacts,
+            request.maxArtifacts,
+            request.invocation.context.spec.generation.lockFile
+          )
         },
         request.maxOutputBytes
       );
@@ -350,7 +384,7 @@ async function runRendererChild(): Promise<void> {
           protocolVersion: RENDERER_ISOLATION_PROTOCOL_VERSION,
           requestId: request?.requestId ?? "invalid",
           kind: "failed",
-          reason: "renderer-failed"
+          reason: `${stage}-failed`
         },
         request?.maxOutputBytes ?? 1024
       );
@@ -392,12 +426,16 @@ async function runWorker(
         return;
       }
       const fallback = setTimeout(() => resolve(result), 2_000);
+      const forceKill = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      }, 500);
       child.once("exit", () => {
         clearTimeout(fallback);
+        clearTimeout(forceKill);
         setTimeout(() => resolve(result), 250);
       });
       if (child.connected) child.disconnect();
-      if (!child.killed) child.kill();
+      if (!child.killed) child.kill("SIGTERM");
     };
     const cancel = () => finish("cancelled");
     const timer = setTimeout(() => finish("timeout"), limits.timeoutMs);
@@ -426,7 +464,11 @@ async function runWorker(
           return;
         }
         if (parsed.kind === "rendered") {
-          validateArtifacts(parsed.artifacts, limits.maxArtifacts);
+          validateArtifacts(
+            parsed.artifacts,
+            limits.maxArtifacts,
+            request.invocation.context.spec.generation.lockFile
+          );
         }
         finish(parsed);
       } catch {
@@ -447,6 +489,7 @@ export async function renderSignedExtensionIsolated(
   try {
     limits = resolveLimits(options);
   } catch {
+    diagnostic(options, "limits", "isolation-input-limit");
     return {
       kind: "rejected",
       reason: "isolation-input-limit",
@@ -468,6 +511,7 @@ export async function renderSignedExtensionIsolated(
   try {
     invocation = await wireInvocation(options.invocation, limits);
   } catch {
+    diagnostic(options, "input-serialization", "isolation-input-limit");
     return {
       kind: "rejected",
       reason: "isolation-input-limit",
@@ -499,6 +543,7 @@ export async function renderSignedExtensionIsolated(
   }
   const response = await runWorker(request, limits, options.signal);
   if (response === "cancelled") {
+    diagnostic(options, "process", "isolation-cancelled");
     return {
       kind: "rejected",
       reason: "isolation-cancelled",
@@ -507,6 +552,7 @@ export async function renderSignedExtensionIsolated(
     };
   }
   if (response === "timeout") {
+    diagnostic(options, "process", "isolation-timeout");
     return {
       kind: "rejected",
       reason: "isolation-timeout",
@@ -515,6 +561,7 @@ export async function renderSignedExtensionIsolated(
     };
   }
   if (response === "protocol") {
+    diagnostic(options, "protocol", "isolation-protocol");
     return {
       kind: "rejected",
       reason: "isolation-protocol",
@@ -523,6 +570,7 @@ export async function renderSignedExtensionIsolated(
     };
   }
   if (response.kind === "failed") {
+    diagnostic(options, "renderer", response.reason);
     return {
       kind: "rejected",
       reason: response.reason === "output-limit" ? "isolation-output-limit" : "isolation-failed",

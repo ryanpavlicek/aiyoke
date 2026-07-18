@@ -1,3 +1,4 @@
+export { extensionArtifactPath } from "./artifact-policy.js";
 export { type ApplyResult, HarnessCompiler } from "./compiler.js";
 export {
   createDefaultInitPresetRegistry,
@@ -13,5 +14,6 @@ export {
   SchemaMigrationRegistry,
   type SchemaMigrationResult
 } from "./migration-registry.js";
-export type { HashPort, WorkspacePort } from "./ports.js";
+export type { HashPort, WorkspacePort, WorkspaceWrite } from "./ports.js";
 export { loadRuntimeTemplate, runtimeTemplateReferences } from "./runtime-selection.js";
+export { isShareableWorkspacePath } from "./workspace-snapshot-policy.js";

@@ -49,12 +49,4 @@ export function createXaiApiLoader() {
   return loaderFor(xaiApiTarget as TargetImplementation);
 }
 
-export const grokApiTarget = xaiApiTarget;
-export const createGrokApiLoader = createXaiApiLoader;
-export const createXAILoader = createXaiApiLoader;
-export const createXaiLoader = createXaiApiLoader;
-export const createXaiApiTargetLoader = createXaiApiLoader;
 export const xaiApiLoader = createXaiApiLoader();
-export const grokApiLoader = xaiApiLoader;
-export const xaiApiTargetLoader = xaiApiLoader;
-export default createXaiApiLoader;

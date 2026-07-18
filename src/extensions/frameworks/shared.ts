@@ -1,5 +1,4 @@
 import {
-  compareCodePoints,
   extensionId,
   type HarnessModule,
   type InstructionBlock,
@@ -12,6 +11,13 @@ import {
   type FrameworkExtension,
   type WorkspaceSnapshot
 } from "../../extension-sdk/index.js";
+import {
+  indexWorkspaceFiles,
+  matchesPathOrBasename,
+  normalizeWorkspacePath
+} from "../shared/detection.js";
+
+export { loaderFor } from "../shared/loader.js";
 
 export interface FrameworkDefinition {
   readonly id: string;
@@ -29,24 +35,11 @@ export interface FrameworkDefinition {
   readonly skillBody: string;
 }
 
-function normalize(value: string): string {
-  return value.replaceAll("\\", "/").toLowerCase();
-}
-
 export async function detectFramework(
   workspace: WorkspaceSnapshot,
   definition: FrameworkDefinition
 ): Promise<DetectionResult> {
-  const originalFiles = [...workspace.files].sort(
-    (left, right) =>
-      compareCodePoints(normalize(left), normalize(right)) || compareCodePoints(left, right)
-  );
-  const originalByNormalized = new Map<string, string>();
-  for (const file of originalFiles) {
-    const normalized = normalize(file);
-    if (!originalByNormalized.has(normalized)) originalByNormalized.set(normalized, file);
-  }
-  const files = [...originalByNormalized.keys()];
+  const { files, originalByNormalized } = indexWorkspaceFiles(workspace);
   const manifestFiles = new Set([
     "package.json",
     "pyproject.toml",
@@ -58,20 +51,16 @@ export async function detectFramework(
     "go.mod",
     "go.work"
   ]);
-  const markerSet = new Set(definition.markerFiles.map(normalize));
-  const markerCandidates = files.filter(
-    (file) => markerSet.has(file) || markerSet.has(file.split("/").at(-1) ?? "")
-  );
+  const markerSet = new Set(definition.markerFiles.map(normalizeWorkspacePath));
+  const markerCandidates = files.filter((file) => matchesPathOrBasename(file, markerSet));
   const marker =
     markerCandidates.find((file) => !manifestFiles.has(file.split("/").at(-1) ?? "")) ??
     markerCandidates[0];
   const sourcePattern = definition.sourcePatterns
-    .map(normalize)
+    .map(normalizeWorkspacePath)
     .find((pattern) => files.some((file) => file.endsWith(pattern)));
-  const dependencyMarkers = new Set(definition.markerFiles.map(normalize));
-  const dependencyFiles = files.filter(
-    (file) => dependencyMarkers.has(file) || dependencyMarkers.has(file.split("/").at(-1) ?? "")
-  );
+  const dependencyMarkers = new Set(definition.markerFiles.map(normalizeWorkspacePath));
+  const dependencyFiles = files.filter((file) => matchesPathOrBasename(file, dependencyMarkers));
   const reasons: string[] = [];
   let confidence = 0;
   for (const dependencyFile of dependencyFiles) {
@@ -155,8 +144,4 @@ export function createFramework(definition: FrameworkDefinition): FrameworkExten
       };
     }
   });
-}
-
-export function loaderFor<T extends FrameworkExtension>(extension: T) {
-  return { descriptor: extension.descriptor, load: async () => extension };
 }

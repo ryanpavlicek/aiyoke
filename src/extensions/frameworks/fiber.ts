@@ -1,7 +1,1 @@
-export {
-  createFiberFrameworkLoader,
-  fiber,
-  fiberFrameworkLoader,
-  fiberLoader,
-  fiberLoader as loader
-} from "./go.js";
+export { createFiberFrameworkLoader, fiber, fiberFrameworkLoader } from "./go.js";

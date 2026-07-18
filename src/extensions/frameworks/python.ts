@@ -78,9 +78,6 @@ export function createDjangoFrameworkLoader(): ExtensionLoader<typeof django> {
 export function createFlaskFrameworkLoader(): ExtensionLoader<typeof flask> {
   return loaderFor(flask);
 }
-export const fastApiFrameworkLoader = createFastApiFrameworkLoader;
-export const djangoFrameworkLoader = createDjangoFrameworkLoader;
-export const flaskFrameworkLoader = createFlaskFrameworkLoader;
-export const fastapiLoader = createFastApiFrameworkLoader();
-export const djangoLoader = createDjangoFrameworkLoader();
-export const flaskLoader = createFlaskFrameworkLoader();
+export const fastApiFrameworkLoader = createFastApiFrameworkLoader();
+export const djangoFrameworkLoader = createDjangoFrameworkLoader();
+export const flaskFrameworkLoader = createFlaskFrameworkLoader();

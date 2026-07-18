@@ -12,6 +12,7 @@ import {
   type RuntimeCapabilityManifest,
   type RuntimeTemplateExtension
 } from "../../extension-sdk/index.js";
+import { runtimeConformanceJson } from "./conformance.js";
 
 export interface RuntimeTemplateDefinition {
   readonly id: string;
@@ -21,6 +22,7 @@ export interface RuntimeTemplateDefinition {
   readonly source: string;
   readonly testFileName: string;
   readonly testSource: string;
+  readonly policyArtifact: (policy: RuntimePolicy) => IntegrationArtifactDefinition;
   readonly modules?: readonly RuntimeModuleDefinition[];
   readonly integrations?: readonly FrameworkIntegrationDefinition[];
   readonly providers?: readonly ProviderIntegrationDefinition[];
@@ -91,9 +93,17 @@ ports, bounded retry timing, token/cost budget checks, and a circuit-breaker sta
 machine. Register application-specific provider, telemetry, cache, evaluation,
 guard, and approval adapters at the application boundary.
 
+The adjacent runtime-native \`policy.*\` module is compiled from the same resolved
+policy as \`policy.json\`; import its options rather than manually copying units or
+defaults. The JSON document remains the language-neutral audit record.
+
 The generated ${definition.testFileName} is a native conformance starting point.
 Keep it running as the runtime is integrated and extend it with provider failure,
 timeout, malformed-output, cancellation, and concurrency cases.
+
+The versioned, language-neutral behavior contract is recorded in
+\`conformance.json\`. Native tests load this file so the five generated runtimes
+cannot silently redefine provider, wire-format, or option-validation semantics.
 
 The machine-readable \`capabilities.json\` records all seven production capability
 families and distinguishes executable first-party behavior from integration ports.
@@ -117,7 +127,8 @@ function capabilityManifest(
   definition: RuntimeTemplateDefinition,
   modules: readonly RuntimeModuleDefinition[],
   integrations: readonly FrameworkIntegrationDefinition[],
-  providers: readonly ProviderIntegrationDefinition[]
+  providers: readonly ProviderIntegrationDefinition[],
+  policyArtifactPath: string
 ): string {
   const moduleArtifacts = (id: string) =>
     modules
@@ -198,7 +209,12 @@ function capabilityManifest(
         components: [
           {
             kind: "implemented",
-            behaviors: ["input-output-tool-guards", "fail-closed-approval", "policy-audit-events"],
+            behaviors: [
+              "input-output-guards",
+              "validated-tool-execution",
+              "fail-closed-approval",
+              "policy-audit-events"
+            ],
             acceptanceArtifacts: [
               definition.testFileName,
               ...moduleArtifacts("tooling").filter((path) => path.includes("test"))
@@ -206,7 +222,7 @@ function capabilityManifest(
           },
           {
             kind: "integration-port",
-            contract: "Guard and ApprovalPort",
+            contract: "Guard, ApprovalPort, and validated tooling module",
             templateArtifacts: [definition.fileName, ...moduleArtifacts("tooling")],
             acceptanceArtifacts: [
               definition.testFileName,
@@ -220,7 +236,12 @@ function capabilityManifest(
         components: [
           {
             kind: "implemented",
-            behaviors: ["shared-lifecycle", "native-conformance-suite", "thin-framework-adapters"],
+            behaviors: [
+              "shared-lifecycle",
+              "native-conformance-suite",
+              "compiled-policy-options",
+              "thin-framework-adapters"
+            ],
             acceptanceArtifacts: [definition.testFileName, ...frameworkArtifacts]
           },
           {
@@ -273,7 +294,7 @@ function capabilityManifest(
           {
             kind: "integration-port",
             contract: "CachePort",
-            templateArtifacts: [definition.fileName],
+            templateArtifacts: [definition.fileName, policyArtifactPath],
             acceptanceArtifacts: runtimeAcceptance
           }
         ]
@@ -330,13 +351,17 @@ export function createRuntimeTemplate(
       const providers = (definition.providers ?? []).filter((provider) =>
         provider.targets.some((target) => selectedTargets.has(extensionId(target)))
       );
+      const policy = resolveRuntimePolicy(runtime.profile);
+      const nativePolicy = definition.policyArtifact(policy);
       return [
         artifact(definition.fileName, definition.source),
         artifact(definition.testFileName, definition.testSource),
-        artifact("policy.json", policyJson(resolveRuntimePolicy(runtime.profile))),
+        artifact("conformance.json", runtimeConformanceJson()),
+        artifact("policy.json", policyJson(policy)),
+        artifact(nativePolicy.path, nativePolicy.source),
         artifact(
           "capabilities.json",
-          capabilityManifest(definition, modules, integrations, providers)
+          capabilityManifest(definition, modules, integrations, providers, nativePolicy.path)
         ),
         artifact(
           "README.md",
