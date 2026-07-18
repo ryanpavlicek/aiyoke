@@ -23,13 +23,21 @@ describe("NodeWorkspace", () => {
     const root = await temporaryRoot("aiyoke-workspace-");
     await mkdir(join(root, "source", "cache"), { recursive: true });
     await mkdir(join(root, "node_modules", "ignored"), { recursive: true });
+    await mkdir(join(root, "packages", "app", "node_modules", "ignored"), { recursive: true });
     await mkdir(join(root, ".aiyoke", "cache"), { recursive: true });
     await writeFile(join(root, "source", "cache", "included.ts"), "export {};\n");
     await writeFile(join(root, "node_modules", "ignored", "file.js"), "ignored\n");
+    await writeFile(
+      join(root, "packages", "app", "node_modules", "ignored", "file.js"),
+      "ignored\n"
+    );
     await writeFile(join(root, ".aiyoke", "cache", "ignored.json"), "{}\n");
+    await writeFile(join(root, ".env"), "SECRET=hidden\n");
+    await writeFile(join(root, ".env.local"), "SECRET=hidden\n");
+    await writeFile(join(root, ".env.example"), "SECRET=replace-me\n");
 
     const workspace = await NodeWorkspace.open(root);
-    expect(workspace.files).toEqual(["source/cache/included.ts"]);
+    expect(workspace.files).toEqual([".env.example", "source/cache/included.ts"]);
     expect(await workspace.read("missing.txt")).toBeUndefined();
     expect(await workspace.exists("missing.txt")).toBe(false);
 
@@ -52,6 +60,64 @@ describe("NodeWorkspace", () => {
     await expect(workspace.writeAtomic("blocked/child", "unsafe", false)).rejects.toThrow(
       /non-directory/
     );
+  });
+
+  it("stages and commits a multi-file plan transaction as one batch", async () => {
+    const root = await temporaryRoot("aiyoke-batch-");
+    await writeFile(join(root, "existing.txt"), "before\n");
+    const workspace = await NodeWorkspace.open(root);
+
+    await workspace.writeBatchAtomic([
+      { path: "created.txt", content: "created\n", executable: false, previous: undefined },
+      {
+        path: "existing.txt",
+        content: "after\n",
+        executable: false,
+        previous: "before\n"
+      }
+    ]);
+
+    expect(await workspace.read("created.txt")).toBe("created\n");
+    expect(await workspace.read("existing.txt")).toBe("after\n");
+  });
+
+  it("does not commit any plan output when batch staging fails", async () => {
+    const root = await temporaryRoot("aiyoke-batch-stage-failure-");
+    const workspace = await NodeWorkspace.open(root, {
+      async onAtomicWriteCheckpoint(checkpoint, context) {
+        if (checkpoint === "temporary-staged" && context.path === "second.txt") {
+          throw new Error("injected staging failure");
+        }
+      }
+    });
+
+    await expect(
+      workspace.writeBatchAtomic([
+        { path: "first.txt", content: "first\n", executable: false, previous: undefined },
+        { path: "second.txt", content: "second\n", executable: false, previous: undefined }
+      ])
+    ).rejects.toThrow(/stage second/);
+    await expect(readFile(join(root, "first.txt"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+    await expect(readFile(join(root, "second.txt"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+  });
+
+  it("rejects a stale batch before replacing any file", async () => {
+    const root = await temporaryRoot("aiyoke-batch-stale-");
+    await writeFile(join(root, "first.txt"), "current\n");
+    const workspace = await NodeWorkspace.open(root);
+
+    await expect(
+      workspace.writeBatchAtomic([
+        { path: "created.txt", content: "created\n", executable: false, previous: undefined },
+        { path: "first.txt", content: "next\n", executable: false, previous: "stale\n" }
+      ])
+    ).rejects.toMatchObject({ code: "PLAN_CONFLICT" });
+    expect(await workspace.read("first.txt")).toBe("current\n");
+    expect(await workspace.read("created.txt")).toBeUndefined();
   });
 
   it("refuses writes through symbolic-link ancestors", async () => {

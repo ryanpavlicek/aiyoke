@@ -108,8 +108,4 @@ export function createOpenRouterLoader() {
   return loaderFor(openRouterTarget as TargetImplementation);
 }
 
-export const createOpenrouterLoader = createOpenRouterLoader;
-export const createOpenRouterTargetLoader = createOpenRouterLoader;
 export const openRouterLoader = createOpenRouterLoader();
-export const openRouterTargetLoader = openRouterLoader;
-export default createOpenRouterLoader;

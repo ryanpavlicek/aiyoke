@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join, resolve } from "node:path";
 import { extensionId } from "../dist/core/index.js";
@@ -30,8 +30,13 @@ function runPnpm(args, options) {
   run("pnpm", args, options);
 }
 
+function stage(message) {
+  process.stdout.write(`[framework-fixtures] ${message}\n`);
+}
+
 function rustBuildEnvironment() {
-  if (process.platform !== "win32") return {};
+  const sharedTarget = { CARGO_TARGET_DIR: join(tmpdir(), "aiyoke-framework-cargo-target") };
+  if (process.platform !== "win32") return sharedTarget;
   const result = spawnSync("rustc", ["--version", "--verbose"], {
     encoding: "utf8",
     env: process.env,
@@ -41,9 +46,12 @@ function rustBuildEnvironment() {
   if (result.status !== 0) {
     throw new Error(`rustc --version --verbose failed (${result.status}).\n${result.stderr}`);
   }
-  if (!/^host: .*windows-gnu$/mu.test(result.stdout)) return {};
+  const windowsHttp = { CARGO_HTTP_CHECK_REVOKE: "false" };
+  if (!/^host: .*windows-gnu$/mu.test(result.stdout)) return { ...sharedTarget, ...windowsHttp };
   const existing = process.env.RUSTFLAGS?.trim();
   return {
+    ...windowsHttp,
+    ...sharedTarget,
     RUSTFLAGS: [existing, "-C link-self-contained=yes"].filter(Boolean).join(" ")
   };
 }
@@ -79,6 +87,15 @@ try {
   const go = await generate(root, "go", "go", ["chi", "gin", "fiber"]);
   const rust = await generate(root, "rust", "rust", ["axum", "actix"]);
 
+  const conformanceDocuments = await Promise.all(
+    [typeScript, javaScript, python, go, rust].map(async (directory) =>
+      readFile(join(directory, "conformance.json"), "utf8")
+    )
+  );
+  if (conformanceDocuments.some((document) => document !== conformanceDocuments[0])) {
+    throw new Error("Framework fixtures received different runtime conformance contracts.");
+  }
+
   const nodeRoot = root;
   await writeFile(
     join(nodeRoot, "package.json"),
@@ -104,9 +121,17 @@ try {
     )}\n`,
     "utf8"
   );
-  runPnpm(["install", "--ignore-workspace", "--ignore-scripts", "--frozen-lockfile=false"], {
-    cwd: nodeRoot
-  });
+  stage("installing pinned Node framework dependencies");
+  runPnpm(
+    [
+      "install",
+      "--ignore-workspace",
+      "--ignore-scripts",
+      "--frozen-lockfile=false",
+      "--prefer-offline"
+    ],
+    { cwd: nodeRoot }
+  );
   run(process.execPath, [
     resolve("node_modules", "typescript", "bin", "tsc"),
     "--ignoreConfig",
@@ -147,8 +172,10 @@ try {
   );
   run(process.execPath, [javaScriptBehavior], { cwd: javaScript });
 
+  stage("validating TypeScript and JavaScript framework behavior");
   const pythonDependencies = join(root, "python-dependencies");
   const pythonExecutable = process.platform === "win32" ? "python" : "python3";
+  stage("installing and validating pinned Python framework dependencies");
   run(pythonExecutable, [
     "-m",
     "pip",
@@ -165,6 +192,7 @@ try {
     env: { PYTHONPATH: [pythonDependencies, python].join(delimiter) }
   });
   const pythonBehavior = join(python, "framework_behavior.py");
+  stage("validating pinned Go framework dependencies and behavior");
   await writeFile(
     pythonBehavior,
     await readFile(behaviorFixture("python_behavior.py"), "utf8"),
@@ -222,6 +250,7 @@ publish = false
 [dependencies]
 actix-web = "=4.14.0"
 axum = "=0.8.9"
+http-body-util = "=0.1.4"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
 tokio = { version = "=1.52.4", features = ["rt-multi-thread", "macros"] }
@@ -246,7 +275,8 @@ pub mod runtime;
     await readFile(behaviorFixture("rust_behavior.rs"), "utf8"),
     "utf8"
   );
-  run("cargo", ["generate-lockfile"], { cwd: rust });
+  await copyFile(behaviorFixture("rust-Cargo.lock"), join(rust, "Cargo.lock"));
+  stage("validating locked Rust framework dependencies and behavior");
   run("cargo", ["fmt", "--check"], { cwd: rust });
   run("cargo", ["test", "--lib", "--locked"], {
     cwd: rust,

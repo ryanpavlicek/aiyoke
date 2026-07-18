@@ -1,7 +1,1 @@
-export {
-  createFlaskFrameworkLoader,
-  flask,
-  flaskFrameworkLoader,
-  flaskLoader,
-  flaskLoader as loader
-} from "./python.js";
+export { createFlaskFrameworkLoader, flask, flaskFrameworkLoader } from "./python.js";

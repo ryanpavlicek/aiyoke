@@ -45,7 +45,11 @@ provider ports, typed results and failures, deadlines and cancellation, bounded
 retry/fallback and circuit breaking, validation and repair, redacted lifecycle
 events, guards and approvals, cache/evaluation ports, token and cost budgets, and
 bounded batch concurrency. CI executes the generated native test suites and runs
-the applicable compilers, type checkers, and formatters. Selected frameworks also
+the applicable compilers, type checkers, and formatters. Every suite consumes the
+same versioned `conformance.json` vectors for wire shape, provider classification,
+construction validation, guard stages, and synchronous failure containment. The
+resolved policy is also compiled into an importable native `policy.*` options
+module while `policy.json` remains the cross-language audit record. Selected frameworks also
 receive registered thin request-lifecycle adapters; a clean CI fixture checks them
 against pinned real releases of every framework in this matrix. Behavioral
 fixtures execute every adapter with real framework request/response objects and

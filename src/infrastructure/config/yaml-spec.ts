@@ -1,4 +1,4 @@
-import { parseDocument, stringify } from "yaml";
+import { LineCounter, parseDocument, stringify } from "yaml";
 import type { SchemaDocument } from "../../application/index.js";
 import {
   type AgentFeature,
@@ -675,6 +675,154 @@ function targetSpec(value: unknown, index: number): TargetSpec {
   throw new AiyokeError("INVALID_SPEC", `targets[${index}].kind is not supported.`);
 }
 
+interface ValidationIssue {
+  readonly path: string;
+  readonly message: string;
+  readonly line?: number;
+  readonly column?: number;
+}
+
+function pathParts(path: string): readonly (string | number)[] {
+  const result: Array<string | number> = [];
+  for (const match of path.matchAll(/([^.[\]]+)|\[(\d+)\]/gu)) {
+    const index = match[2];
+    result.push(index === undefined ? (match[1] as string) : Number(index));
+  }
+  return result;
+}
+
+function issuePath(message: string): string {
+  if (message.startsWith("schemaVersion")) return "schemaVersion";
+  const match = message.match(
+    /(?:^|\s)((?:aiyoke\.yaml|project|composition|runtime|targets|packs|generation)(?:\[\d+\]|\.[A-Za-z0-9_-]+)*)/u
+  );
+  const path = match?.[1] ?? "aiyoke.yaml";
+  return path.startsWith("aiyoke.yaml.") ? path.slice("aiyoke.yaml.".length) : path;
+}
+
+function locateIssue(
+  source: string,
+  issue: Omit<ValidationIssue, "line" | "column">
+): ValidationIssue {
+  try {
+    const lineCounter = new LineCounter();
+    const document = parseDocument(source, { lineCounter, schema: "core", version: "1.2" });
+    const parts = pathParts(issue.path === "aiyoke.yaml" ? "" : issue.path);
+    let node: unknown = document.getIn(parts, true);
+    for (let length = parts.length - 1; node === undefined && length >= 0; length -= 1) {
+      node = document.getIn(parts.slice(0, length), true);
+    }
+    if (
+      node !== null &&
+      typeof node === "object" &&
+      "range" in node &&
+      Array.isArray(node.range) &&
+      typeof node.range[0] === "number"
+    ) {
+      const position = lineCounter.linePos(node.range[0]);
+      return { ...issue, line: position.line, column: position.col };
+    }
+  } catch {
+    // Location enrichment must never obscure the validation error.
+  }
+  return issue;
+}
+
+function validationDetails(
+  source: string,
+  issues: readonly Omit<ValidationIssue, "line" | "column">[]
+): JsonObject {
+  return {
+    issues: issues.map((issue) => {
+      const located = locateIssue(source, issue);
+      return {
+        path: located.path,
+        message: located.message,
+        ...(located.line === undefined ? {} : { line: located.line }),
+        ...(located.column === undefined ? {} : { column: located.column })
+      };
+    })
+  };
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function directValidationIssues(
+  root: SchemaDocument
+): readonly Omit<ValidationIssue, "line" | "column">[] {
+  const issues: Array<Omit<ValidationIssue, "line" | "column">> = [];
+  const allowedRoot = new Set([
+    "schemaVersion",
+    "project",
+    "composition",
+    "runtime",
+    "targets",
+    "packs",
+    "generation"
+  ]);
+  for (const key of Object.keys(root)) {
+    if (!allowedRoot.has(key))
+      issues.push({ path: key, message: `aiyoke.yaml.${key} is unknown or unsupported.` });
+  }
+  const project = objectValue(root.project);
+  if (project === undefined) {
+    issues.push({ path: "project", message: "project must be an object." });
+  } else {
+    for (const key of Object.keys(project)) {
+      if (!new Set(["name", "architecture"]).has(key)) {
+        issues.push({
+          path: `project.${key}`,
+          message: `project.${key} is unknown or unsupported.`
+        });
+      }
+    }
+    if (typeof project.name !== "string" || project.name.trim().length === 0) {
+      issues.push({ path: "project.name", message: "project.name must be a non-empty string." });
+    }
+    if (!["layered", "hexagonal", "clean", "custom"].includes(String(project.architecture))) {
+      issues.push({ path: "project.architecture", message: "project.architecture is invalid." });
+    }
+  }
+  const generation = objectValue(root.generation);
+  if (generation === undefined) {
+    issues.push({ path: "generation", message: "generation must be an object." });
+  } else {
+    for (const key of Object.keys(generation)) {
+      if (!new Set(["sourceDirectory", "lockFile", "lineEndings"]).has(key)) {
+        issues.push({
+          path: `generation.${key}`,
+          message: `generation.${key} is unknown or unsupported.`
+        });
+      }
+    }
+    for (const key of ["sourceDirectory", "lockFile"] as const) {
+      if (typeof generation[key] !== "string" || generation[key].trim().length === 0) {
+        issues.push({
+          path: `generation.${key}`,
+          message: `generation.${key} must be a non-empty string.`
+        });
+      }
+    }
+    if (generation.lineEndings !== "lf" && generation.lineEndings !== "crlf") {
+      issues.push({
+        path: "generation.lineEndings",
+        message: "generation.lineEndings must be lf or crlf."
+      });
+    }
+  }
+  if (!Array.isArray(root.targets)) {
+    issues.push({ path: "targets", message: "targets must be an array." });
+  }
+  if (!Array.isArray(root.packs)) {
+    issues.push({ path: "packs", message: "packs must be an array." });
+  }
+  return issues;
+}
+
 function parseYaml(source: string): unknown {
   if (Buffer.byteLength(source, "utf8") > MAX_CONFIG_BYTES) {
     throw new AiyokeError(
@@ -697,8 +845,16 @@ function parseYaml(source: string): unknown {
     if (issue !== undefined) throw issue;
     value = document.toJS({ maxAliasCount: 0 });
   } catch (error) {
+    const position = (error as { linePos?: readonly { line: number; col: number }[] }).linePos?.[0];
     throw new AiyokeError("INVALID_SPEC", "aiyoke.yaml is not valid YAML.", {
-      cause: error instanceof Error ? error.message : String(error)
+      cause: error instanceof Error ? error.message : String(error),
+      issues: [
+        {
+          path: "aiyoke.yaml",
+          message: "aiyoke.yaml is not valid YAML.",
+          ...(position === undefined ? {} : { line: position.line, column: position.col })
+        }
+      ]
     });
   }
   return value;
@@ -715,12 +871,21 @@ export function parseSchemaDocument(source: string): SchemaDocument {
   return root as SchemaDocument;
 }
 
-export function parseHarnessSpec(source: string): HarnessSpec {
+function parseHarnessSpecValue(source: string): HarnessSpec {
   const root = parseSchemaDocument(source);
   if (root.schemaVersion !== CURRENT_SCHEMA_VERSION) {
     throw new AiyokeError(
       "INVALID_SPEC",
       `schemaVersion must be ${CURRENT_SCHEMA_VERSION}; run \`aiyoke migrate\` for older configurations.`
+    );
+  }
+  const directIssues = directValidationIssues(root);
+  if (directIssues.length > 0) {
+    const firstIssue = directIssues[0];
+    throw new AiyokeError(
+      "INVALID_SPEC",
+      `aiyoke.yaml contains ${directIssues.length} validation issue(s).${firstIssue === undefined ? "" : ` ${firstIssue.message}`}`,
+      validationDetails(source, directIssues)
     );
   }
   allowedKeys(
@@ -741,17 +906,65 @@ export function parseHarnessSpec(source: string): HarnessSpec {
   }
   const generation = record(root.generation, "generation");
   allowedKeys(generation, ["sourceDirectory", "lockFile", "lineEndings"], "generation");
-  if (generation.lineEndings !== "lf") {
-    throw new AiyokeError("INVALID_SPEC", "generation.lineEndings must be lf.");
+  if (generation.lineEndings !== "lf" && generation.lineEndings !== "crlf") {
+    throw new AiyokeError("INVALID_SPEC", "generation.lineEndings must be lf or crlf.");
   }
   if (!Array.isArray(root.targets)) {
     throw new AiyokeError("INVALID_SPEC", "targets must be an array.");
   }
-  const targets = root.targets.map(targetSpec);
+  const semanticIssues: Array<Omit<ValidationIssue, "line" | "column">> = [];
+  function capture<T>(fallbackPath: string, operation: () => T): T | undefined {
+    try {
+      return operation();
+    } catch (error) {
+      if (!(error instanceof AiyokeError)) throw error;
+      const inferred = issuePath(error.message);
+      semanticIssues.push({
+        path: inferred === "aiyoke.yaml" ? fallbackPath : inferred,
+        message: error.message
+      });
+      return undefined;
+    }
+  }
+
+  const composition = capture("composition", () => compositionSpec(root.composition));
+  const runtime = capture("runtime", () => runtimeSpec(root.runtime));
+  const targets = root.targets.flatMap((value, index) => {
+    const target = capture(`targets[${index}]`, () => targetSpec(value, index));
+    return target === undefined ? [] : [target];
+  });
   if (
+    targets.length === root.targets.length &&
     new Set(targets.map((target) => `${target.kind}:${target.adapter}`)).size !== targets.length
   ) {
-    throw new AiyokeError("INVALID_SPEC", "targets cannot contain duplicate kind/adapter pairs.");
+    semanticIssues.push({
+      path: "targets",
+      message: "targets cannot contain duplicate kind/adapter pairs."
+    });
+  }
+  const packs = capture("packs", () => idArray(root.packs ?? [], "packs"));
+  const sourceDirectory = capture("generation.sourceDirectory", () =>
+    safeRelativePath(requiredString(generation.sourceDirectory, "generation.sourceDirectory"))
+  );
+  const lockFile = capture("generation.lockFile", () =>
+    safeRelativePath(requiredString(generation.lockFile, "generation.lockFile"))
+  );
+  if (semanticIssues.length > 0) {
+    const firstIssue = semanticIssues[0];
+    throw new AiyokeError(
+      "INVALID_SPEC",
+      `aiyoke.yaml contains ${semanticIssues.length} validation issue(s).${firstIssue === undefined ? "" : ` ${firstIssue.message}`}`,
+      validationDetails(source, semanticIssues)
+    );
+  }
+  if (
+    composition === undefined ||
+    runtime === undefined ||
+    packs === undefined ||
+    sourceDirectory === undefined ||
+    lockFile === undefined
+  ) {
+    throw new AiyokeError("INVALID_SPEC", "aiyoke.yaml validation did not produce a value.");
   }
 
   return {
@@ -760,18 +973,29 @@ export function parseHarnessSpec(source: string): HarnessSpec {
       name: requiredString(project.name, "project.name"),
       architecture
     },
-    composition: compositionSpec(root.composition),
-    runtime: runtimeSpec(root.runtime),
+    composition,
+    runtime,
     targets,
-    packs: idArray(root.packs ?? [], "packs"),
+    packs,
     generation: {
-      sourceDirectory: safeRelativePath(
-        requiredString(generation.sourceDirectory, "generation.sourceDirectory")
-      ),
-      lockFile: safeRelativePath(requiredString(generation.lockFile, "generation.lockFile")),
-      lineEndings: "lf"
+      sourceDirectory,
+      lockFile,
+      lineEndings: generation.lineEndings
     }
   };
+}
+
+export function parseHarnessSpec(source: string): HarnessSpec {
+  try {
+    return parseHarnessSpecValue(source);
+  } catch (error) {
+    if (!(error instanceof AiyokeError) || Array.isArray(error.details.issues)) throw error;
+    const issue = { path: issuePath(error.message), message: error.message };
+    throw new AiyokeError(error.code, error.message, {
+      ...error.details,
+      ...validationDetails(source, [issue])
+    });
+  }
 }
 
 export function stringifyHarnessSpec(spec: HarnessSpec): string {

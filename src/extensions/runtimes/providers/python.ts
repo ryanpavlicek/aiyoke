@@ -201,7 +201,12 @@ class ResponsesApiAdapter:
         except (UnicodeDecodeError, json.JSONDecodeError):
             return _failure("The provider returned invalid JSON.", False, "invalid_response")
         payload: Mapping[str, Any] = parsed if isinstance(parsed, Mapping) else {}
-        if response.status < 200 or response.status >= 300 or payload.get("error") is not None:
+        if (
+            response.status < 200
+            or response.status >= 300
+            or payload.get("error") is not None
+            or payload.get("status") == "failed"
+        ):
             error = payload.get("error") if isinstance(payload.get("error"), Mapping) else {}
             message = (
                 error.get("message")
@@ -255,6 +260,7 @@ def register_responses_adapter(
 
 const tests = `import json
 import unittest
+from pathlib import Path
 
 from providers.responses import (
     HttpResponse,
@@ -263,6 +269,11 @@ from providers.responses import (
     responses_adapter_config,
 )
 from runtime import AdapterRegistry, ModelFailure, ModelRequest, ModelSuccess
+
+
+CONFORMANCE = json.loads(
+    Path(__file__).parent.parent.joinpath("conformance.json").read_text(encoding="utf-8")
+)
 
 
 class FakeHttp:
@@ -279,6 +290,19 @@ class FakeHttp:
 
 class ResponsesProviderTests(unittest.IsolatedAsyncioTestCase):
     request = ModelRequest("provider-1", "primary", "v1", {"input": "hello"}, 1, 20, {})
+
+    async def test_classifies_shared_provider_failure_vectors(self):
+        for vector in CONFORMANCE["providerCases"]:
+            adapter = ResponsesApiAdapter(
+                responses_adapter_config("openrouter", "test/model"),
+                lambda _: "secret",
+                FakeHttp(HttpResponse(vector["statusCode"], json.dumps(vector["body"]).encode())),
+            )
+            result = await adapter.invoke(self.request)
+            self.assertIsInstance(result, ModelFailure)
+            self.assertEqual(result.kind.value, vector["expected"]["failureKind"])
+            self.assertEqual(result.provider_code, vector["expected"]["providerCode"])
+            self.assertEqual(result.retryable, vector["expected"]["retryable"])
 
     async def test_maps_output_usage_and_registration(self):
         http = FakeHttp(

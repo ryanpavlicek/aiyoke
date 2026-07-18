@@ -26,7 +26,14 @@ def _status(kind):
 def _body(result):
     if isinstance(result, ModelFailure):
         return {"error": {"kind": result.kind.value, "message": result.message}}
-    return {"data": result.value, "usage": result.usage.__dict__}
+    return {
+        "data": result.value,
+        "usage": {
+            "inputTokens": result.usage.input_tokens,
+            "outputTokens": result.usage.output_tokens,
+            "estimatedCostUsd": result.usage.estimated_cost_usd,
+        },
+    }
 
 
 async def _execute(runtime, model_request, cancellation_probe=None):

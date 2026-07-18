@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { parseDocument } from "yaml";
 import { extensionId } from "../dist/core/index.js";
 import {
   chatGptTarget,
@@ -237,8 +238,23 @@ async function json(path) {
 }
 
 function assertSkill(content, label) {
+  const frontmatter = content.match(/^---\n([\s\S]*?)\n---\n/u)?.[1];
+  assert(frontmatter !== undefined, `${label} lacks skill frontmatter.`);
+  const document = parseDocument(frontmatter, {
+    merge: false,
+    schema: "core",
+    strict: true,
+    uniqueKeys: true,
+    version: "1.2"
+  });
+  assert(document.errors.length === 0, `${label} has invalid YAML skill frontmatter.`);
+  const value = document.toJS({ maxAliasCount: 0 });
   assert(
-    /^---\nname: [a-z0-9-]+\ndescription: .+\n/m.test(content),
+    value !== null &&
+      typeof value === "object" &&
+      /^[a-z0-9-]+$/u.test(value.name) &&
+      typeof value.description === "string" &&
+      value.description.trim().length > 0,
     `${label} lacks valid skill frontmatter.`
   );
   assert(

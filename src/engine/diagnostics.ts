@@ -161,6 +161,14 @@ export const BUILTIN_DIAGNOSTIC_CATALOG: readonly BuiltinDiagnosticDefinition[] 
   },
   {
     channel: "finding",
+    code: "MODULE_DEFINITION_CONFLICT",
+    defaultSeverity: "error",
+    summary: "Selected extensions define the same skill, subagent, hook, or MCP namespace.",
+    remediation: "Rename or remove one definition so every generated module namespace is unique.",
+    stability: stable
+  },
+  {
+    channel: "finding",
     code: "NO_LANGUAGES",
     defaultSeverity: "warning",
     summary: "The project selects no language extensions.",

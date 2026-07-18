@@ -1,7 +1,1 @@
-export {
-  createExpressFrameworkLoader,
-  express,
-  expressFrameworkLoader,
-  expressLoader,
-  expressLoader as loader
-} from "./node.js";
+export { createExpressFrameworkLoader, express, expressFrameworkLoader } from "./node.js";

@@ -1,7 +1,1 @@
-export {
-  createFastifyFrameworkLoader,
-  fastify,
-  fastifyFrameworkLoader,
-  fastifyLoader,
-  fastifyLoader as loader
-} from "./node.js";
+export { createFastifyFrameworkLoader, fastify, fastifyFrameworkLoader } from "./node.js";

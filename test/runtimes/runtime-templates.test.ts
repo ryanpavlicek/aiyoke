@@ -1,6 +1,6 @@
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { extensionId } from "../../src/core/index.js";
+import { extensionId, type RuntimePolicy } from "../../src/core/index.js";
 import type { RuntimeTemplateExtension } from "../../src/extension-sdk/index.js";
 import { runtimeLoaders } from "../../src/extensions/runtimes/index.js";
 import { defaultHarnessSpec } from "../../src/infrastructure/config/index.js";
@@ -19,6 +19,14 @@ const testFileNames = new Map([
   ["python", "test_runtime.py"],
   ["go", "runtime_test.go"],
   ["rust", "runtime_test.rs"]
+]);
+
+const policyFileNames = new Map([
+  ["typescript", "policy.ts"],
+  ["javascript", "policy.js"],
+  ["python", "policy.py"],
+  ["go", "policy.go"],
+  ["rust", "policy.rs"]
 ]);
 
 const capabilityFamilies = [
@@ -176,10 +184,13 @@ describe("runtime template extensions", () => {
       });
       const expectedFile = fileNames.get(language);
       const expectedTestFile = testFileNames.get(language);
+      const expectedPolicyFile = policyFileNames.get(language);
       expect(artifacts.map((artifact) => artifact.path)).toEqual([
         `aiyoke-runtime/${language}/${expectedFile}`,
         `aiyoke-runtime/${language}/${expectedTestFile}`,
+        `aiyoke-runtime/${language}/conformance.json`,
         `aiyoke-runtime/${language}/policy.json`,
+        `aiyoke-runtime/${language}/${expectedPolicyFile}`,
         `aiyoke-runtime/${language}/capabilities.json`,
         `aiyoke-runtime/${language}/README.md`,
         ...(runtimeModuleArtifacts.get(language) ?? []).map(
@@ -187,11 +198,23 @@ describe("runtime template extensions", () => {
         )
       ]);
       expect(artifacts.every((artifact) => artifact.ownership === "generated")).toBe(true);
+      const conformance = artifacts.find((artifact) => artifact.path.endsWith("conformance.json"));
+      expect(JSON.parse(conformance?.content ?? "")).toMatchObject({
+        schemaVersion: 1,
+        runtime: {
+          synchronousAdapterThrow: "provider-failure",
+          guardStages: ["input", "output"]
+        }
+      });
       const policy = artifacts.find((artifact) => artifact.path.endsWith("policy.json"));
       expect(JSON.parse(policy?.content ?? "")).toMatchObject({
         schemaVersion: 1,
         policy: { reliability: { timeoutMs: 30_000 } }
       });
+      const nativePolicy = artifacts.find((artifact) =>
+        artifact.path.endsWith(`/${expectedPolicyFile}`)
+      );
+      expect(nativePolicy?.content).toMatch(/RuntimeOptions|runtimeOptions/);
     }
   });
 
@@ -214,6 +237,69 @@ describe("runtime template extensions", () => {
       }
     });
     expect(artifacts[0]?.path).toBe("services/api/aiyoke-runtime/python/runtime.py");
+  });
+
+  it("compiles custom and disabled policy variants into every native option module", async () => {
+    const policy: RuntimePolicy = {
+      reliability: {
+        timeoutMs: 1_234,
+        retry: { kind: "disabled" },
+        circuitBreaker: { kind: "disabled" },
+        fallback: { kind: "ordered", routes: ["backup"] },
+        maxRepairAttempts: 2
+      },
+      observability: {
+        kind: "events",
+        contentCapture: "metadata-only",
+        emitTokenUsage: true,
+        emitEstimatedCost: true
+      },
+      evaluation: { kind: "offline" },
+      safety: { kind: "guarded", humanApproval: "disabled", audit: "redacted" },
+      performance: {
+        cache: { kind: "disabled" },
+        tokenBudget: { kind: "disabled" },
+        costBudget: { kind: "limited", maxEstimatedCostUsd: 0.25 },
+        maxConcurrency: 3,
+        maxBatchSize: 5
+      }
+    };
+    const fragments = new Map<string, readonly string[]>([
+      ["typescript", ["maxAttempts: 1", 'fallbackRoutes: ["backup"]', "maxEstimatedCostUsd: 0.25"]],
+      ["javascript", ["maxAttempts: 1", 'fallbackRoutes: ["backup"]', "maxEstimatedCostUsd: 0.25"]],
+      ["python", ["max_attempts=1", 'fallback_routes=("backup",)', "max_estimated_cost_usd=0.25"]],
+      ["go", ["MaxAttempts: 1", '[]string{"backup"}', "cost := 0.25"]],
+      ["rust", ["max_attempts: 1", 'vec!["backup".to_owned()]', "Some(0.25)"]]
+    ]);
+
+    for (const runtime of await loadedRuntimes()) {
+      const language = runtime.descriptor.language;
+      const base = defaultHarnessSpec("custom-policy");
+      const spec = {
+        ...base,
+        composition: {
+          kind: "single" as const,
+          stack: { languages: [language], frameworks: [] }
+        },
+        targets: [],
+        runtime: {
+          kind: "enabled" as const,
+          outputDirectory: "aiyoke-runtime",
+          profile: { kind: "custom" as const, ...policy }
+        }
+      };
+      const artifacts = await runtime.render({
+        spec,
+        workspace,
+        runtime: spec.runtime,
+        scope: { kind: "project", stack: spec.composition.stack }
+      });
+      const policyFile = policyFileNames.get(language);
+      const nativePolicy = artifacts.find((artifact) => artifact.path.endsWith(`/${policyFile}`));
+      for (const fragment of fragments.get(language) ?? []) {
+        expect(nativePolicy?.content).toContain(fragment);
+      }
+    }
   });
 
   it("renders only registered framework adapters for the selected language scope", async () => {

@@ -47,7 +47,7 @@ path; this page routes to the deeper contracts that ship with the npm package.
 - [Security policy](../SECURITY.md) defines private reporting, supported
   versions, and the threat model.
 - [Release readiness](release-readiness.md) records the acceptance evidence for
-  the public 0.3 line.
+  the public 0.3 line and focused 0.4 hardening.
 - [Release operations](releasing.md) covers protected publishing, verification,
   deprecation, and rollback.
 - [Roadmap](roadmap.md) separates completed contracts from later exploration.

@@ -1,7 +1,1 @@
-export {
-  createNextJsFrameworkLoader,
-  nextJsFrameworkLoader,
-  nextjs,
-  nextjsLoader,
-  nextjsLoader as loader
-} from "./node.js";
+export { createNextJsFrameworkLoader, nextJsFrameworkLoader, nextjs } from "./node.js";

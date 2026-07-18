@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The project follows
 
 ## Unreleased
 
+## 0.4.0 — 2026-07-18
+
 ### Added
 
 - Add the registered `simple` initialization preset for an auto-detected Claude
@@ -14,6 +16,51 @@ All notable changes to this project are documented here. The project follows
   error-code tuple for CI and integration tooling.
 - Add cross-language deterministic runtime pressure rounds plus property-based
   managed-section preservation and plan-fingerprint stability tests.
+- Add a versioned, language-neutral conformance contract consumed by the native
+  TypeScript, JavaScript, Python, Go, and Rust runtime suites.
+- Add executable native policy-option modules compiled from the same resolved
+  policy as each language-neutral `policy.json` audit record.
+- Add aggregated YAML validation issues with one-based source positions and an
+  opt-in sanitized diagnostic sink for signed discovery and renderer isolation.
+- Add deterministic LF/CRLF generation and rollback-capable multi-file plan
+  transactions.
+
+### Changed
+
+- Generate JavaScript runtime, provider, module, and framework templates from the
+  TypeScript reference and enforce byte-level regeneration in CI.
+- Standardize loader exports so `createXLoader()` is always a factory and every
+  `xLoader` value is an instance; centralize target loading and workspace
+  detection helpers.
+- Export the nameable `AiyokeEngine` type from the lazy root facade while keeping
+  all runtime engine imports dynamic.
+- Pin fast-check to a repository seed with an explicit environment override for
+  intentional reproduction runs.
+
+### Security
+
+- Reject extension artifacts targeting `.git`, `aiyoke.yaml`, the configured lock
+  file, or migration backups, including case variants.
+- Exclude nested dependency trees, generated/cache trees, and non-template `.env`
+  files from renderer snapshots; validate isolated artifacts in both processes.
+- Escalate unresponsive isolated renderers from termination to forced kill and
+  distinguish sanitized protocol/package/module/render/artifact failure stages.
+- Enforce bare-import and dynamic-import architecture rules instead of exempting
+  them from the dependency gate.
+
+### Fixed
+
+- Unify response wire fields, error kinds, provider failure classification,
+  construction-time option validation, real retry jitter, synchronous exception
+  containment, and circuit half-open limits across all five runtimes.
+- Remove the dead `tool` guard stage in favor of the validated tooling registry,
+  and make every supported circuit reset unit milliseconds at the policy boundary.
+- Escape extension-controlled YAML frontmatter and reject duplicate skill,
+  subagent, hook, and MCP namespaces instead of silently taking the first value.
+- Validate CLI commands before opening/scanning a workspace and preserve
+  user-owned bytes around managed CRLF sections.
+- Remove the tracked `CLAUDE.md` reference to intentionally gitignored
+  `AGENTS.md`, so fresh clones have complete tracked guidance.
 
 ### Documentation
 

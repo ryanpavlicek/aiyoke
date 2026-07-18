@@ -365,9 +365,10 @@ generation:
   lineEndings: lf
 ```
 
-Both paths must be safe relative paths. `lineEndings` is currently the literal
-`lf`; platform-native or CRLF output is deliberately unsupported so artifacts
-and digests remain reproducible across operating systems.
+Both paths must be safe relative paths. `lineEndings` accepts `lf` (the default)
+or explicit `crlf`; it never depends on the host platform. Fully generated text
+uses the selected separator with exactly one trailing line ending, while managed
+sections preserve the surrounding user-owned bytes.
 
 ## Complete minimal configuration
 

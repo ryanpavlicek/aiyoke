@@ -53,7 +53,5 @@ export function createAxumFrameworkLoader(): ExtensionLoader<typeof axum> {
 export function createActixFrameworkLoader(): ExtensionLoader<typeof actix> {
   return loaderFor(actix);
 }
-export const axumFrameworkLoader = createAxumFrameworkLoader;
-export const actixFrameworkLoader = createActixFrameworkLoader;
-export const axumLoader = createAxumFrameworkLoader();
-export const actixLoader = createActixFrameworkLoader();
+export const axumFrameworkLoader = createAxumFrameworkLoader();
+export const actixFrameworkLoader = createActixFrameworkLoader();

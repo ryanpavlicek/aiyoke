@@ -1,9 +1,10 @@
 # Public release readiness
 
-Version 0.3 is Aiyoke's first public-ready release. A roadmap item is complete
-only when a reproducible test, workflow run, packaged artifact, or reviewed
-document proves it. Intent, an implementation without tests, and a green test
-that does not cover the stated scope are not completion evidence.
+Version 0.3 made Aiyoke public-ready; 0.4 is a focused enforcement and
+cross-language contract hardening release. A roadmap item is complete only when
+a reproducible test, workflow run, packaged artifact, or reviewed document proves
+it. Intent, an implementation without tests, and a green test that does not cover
+the stated scope are not completion evidence.
 
 ## Status legend
 
@@ -13,13 +14,24 @@ that does not cover the stated scope are not completion evidence.
 | Partial | Useful implementation or evidence exists, but the gate is not fully covered. |
 | Missing | No adequate implementation or evidence exists yet. |
 
+## 0.4 focused hardening gates
+
+| Gate | Status | Reproducible evidence |
+| --- | --- | --- |
+| Cross-language runtime contract | Proven | `conformance.json` drives native option, provider, guard-stage, sync-exception, and response-wire assertions in all five languages; `pnpm test:runtimes` formats, compiles, and executes them. JavaScript runtime/provider/module/framework templates are generated from TypeScript and byte-checked by `pnpm check:runtime-js`. |
+| Artifact and renderer boundary | Proven | Compiler, filesystem, discovery, and isolation adversarial suites reject reserved destinations, secret/dependency snapshots, excessive outputs, malformed artifacts, symlink substitutions, and stale package identity. Timeout tests prove termination escalation, while opt-in diagnostics remain sanitized. |
+| Architecture and extension ambiguity | Proven | The AST gate rejects upward, bare, and unauthorized dynamic imports. Module-conflict tests reject duplicate skill, subagent, hook, and MCP namespaces; hostile frontmatter fixtures remain valid YAML. |
+| Deterministic application | Proven | Compiler and real-filesystem tests cover LF/CRLF content, stable fingerprints, full-batch staging, stale revalidation, rollback-capable commit, zero partial output on staging failure, and idempotent second apply. |
+| Configuration and public API | Proven | Parser/CLI tests aggregate positioned issues, unknown commands have no filesystem side effect, loader meta-tests pin one export convention, package/type gates name `AiyokeEngine`, and docs catalog every diagnostic contract. |
+| Regression resistance | Proven | Property suites use pinned seed `169279552`; focused adversarial, native runtime, real framework, target-client, package, coverage, architecture, documentation, and six-platform Node gates remain required by CI. |
+
 ## Baseline audit
 
 | Area | Current status | Evidence or gap |
 | --- | --- | --- |
-| Layered dependency direction | Proven | `scripts/check-architecture.mjs` runs in `pnpm check` and CI. |
+| Layered dependency direction | Proven | `scripts/check-architecture.mjs` rejects upward, bare, and unauthorized dynamic imports in `pnpm check` and CI. |
 | Registry-based built-ins and lazy facade | Proven | Registry and lazy-facade unit/integration tests cover built-ins and injected loaders. |
-| Deterministic planning and atomic application | Proven | Compiler, filesystem, integration, and five-stack dogfood tests cover the 0.1 contract. |
+| Deterministic planning and atomic application | Proven | Compiler, filesystem, integration, and five-stack dogfood tests cover deterministic LF/CRLF plans and rollback-capable multi-file application. |
 | Supported target rendering | Proven | Strict artifact-contract fixtures cover every supported target, environment-only credentials, native hook/MCP/plugin/marketplace shapes, and secret canaries. Exact Claude Code and Codex npm CLIs plus SHA-256-pinned Grok Build binaries pass locally and in [CI run 29534732991](https://github.com/ryanpavlicek/aiyoke/actions/runs/29534732991): Claude parses the MCP entry, Codex validates and discovers the ChatGPT marketplace, and Grok `inspect --json` discovers instructions, skills, and the MCP endpoint. Provider targets expose tested OpenRouter and xAI endpoints and credential ports. |
 | Supported language/framework rendering | Proven | The representative single-stack matrix plus the 12-workspace polyglot monorepo suite cover all five languages, every framework family, nested/conflicting evidence, deterministic operation order, drift verification, and idempotence. Real-dependency request lifecycle fixtures exercise authorization, invalid requests, typed errors, exception forwarding, and cancellation for every adapter; the full TypeScript, JavaScript, Python, Go, and Rust gate passed in [CI run 29536646599](https://github.com/ryanpavlicek/aiyoke/actions/runs/29536646599). |
 | Schema lifecycle | Proven | Schemas v1 through v3, adjacent reversible registry steps, dry-run, explicit downgrade consent, content-addressed backups, rollback, corruption tests, and lossy-downgrade refusal are covered in unit and integration suites. |
@@ -44,10 +56,12 @@ generated repositories, rather than only around parser examples:
 | Managed-section merging | For arbitrary user-owned prefix/suffix text, replacing a bounded managed section changes only bytes between its markers; a missing, duplicated, or out-of-order marker is a conflict. | Legacy markers, marker text inside generated content, CRLF input, and user-owned whole files never get silently replaced. |
 | Plan fingerprint stability | Equivalent spec object-key orders and artifact-intent permutations produce the same sorted operations and fingerprint; applying an unchanged plan twice produces zero writes. | Duplicate paths, conflicting ownership/content, stale files after planning, and nondeterministic extension output fail closed. |
 
-Use seeded runs when reproducing a failure and preserve the seed in the test
-report. A green line-coverage percentage is necessary but does not replace
-these semantic properties; new generation or ownership behavior must extend the
-corresponding property and adversarial case.
+Property suites use the pinned seed `169279552` (`0x0a170040`) so a regression
+cannot disappear on rerun. Set `AIYOKE_FAST_CHECK_SEED=<integer>` only for an
+intentional exploratory or reproduction run, and record that override in the
+failure report. A green line-coverage percentage is necessary but does not
+replace these semantic properties; new generation or ownership behavior must
+extend the corresponding property and adversarial case.
 
 ## 0.2 release gates
 

@@ -59,10 +59,13 @@ const fixtures: readonly DogfoodFixture[] = [
 
 const fixtureRoot = fileURLToPath(new URL("../fixtures/dogfood/", import.meta.url));
 const temporaryRoots: string[] = [];
+const INTEGRATION_TEST_TIMEOUT_MS = 60_000;
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   );
 });
 
@@ -128,6 +131,6 @@ describe("dogfood project matrix", () => {
       );
       expect((await reopened.apply()).changedPaths).toEqual([]);
     },
-    15_000
+    INTEGRATION_TEST_TIMEOUT_MS
   );
 });

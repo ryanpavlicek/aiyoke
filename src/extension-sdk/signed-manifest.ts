@@ -90,6 +90,17 @@ export interface SignedExtensionDiscoveryOptions {
   readonly consent: ExtensionConsent;
   readonly maxPackageBytes?: number;
   readonly maxPackageFiles?: number;
+  readonly diagnostics?: ExtensionDiagnosticSink;
+}
+
+export interface ExtensionDiagnosticEvent {
+  readonly boundary: "discovery" | "isolation";
+  readonly stage: string;
+  readonly reason: string;
+}
+
+export interface ExtensionDiagnosticSink {
+  emit(event: ExtensionDiagnosticEvent): void;
 }
 
 export interface VerifiedSignedExtensionPackage {

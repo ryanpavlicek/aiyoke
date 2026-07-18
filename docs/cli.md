@@ -3,6 +3,10 @@
 The installed `aiyoke` binary and `node dist/cli.js` expose the same interface.
 Options may appear before or after the command. Unknown flags, missing values,
 unsafe identifiers, invalid configuration, and I/O containment failures exit 1.
+Configuration validation accumulates independent top-level, project, generation,
+target-list, and pack-list defects in one pass. Human-readable errors print every
+available dotted path with `line:column`; `--json` exposes the same ordered array
+as `error.details.issues` for editor and CI integration.
 
 ## Global options
 

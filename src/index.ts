@@ -1,4 +1,12 @@
-import type { InitPreset } from "./extension-sdk/index.js";
+import type { AiyokeEngine as AiyokeEngineInstance } from "./engine/index.js";
+import type {
+  InitPreset,
+  ExtensionLoader as RegisteredExtensionLoader,
+  SignedExtensionDiscoveryOptions as SignedDiscoveryOptions,
+  SignedExtensionDiscoveryResult as SignedDiscoveryResult,
+  IsolatedSignedExtensionOptions as SignedIsolationOptions,
+  IsolatedRendererResult as SignedIsolationResult
+} from "./extension-sdk/index.js";
 
 export type {
   ArtifactIntent,
@@ -15,6 +23,7 @@ export type {
   VerificationFinding
 } from "./core/index.js";
 export { AiyokeError, aggregateHarnessStack, extensionId, safeRelativePath } from "./core/index.js";
+export type { AiyokeEngine } from "./engine/index.js";
 export type {
   AiyokeExtension,
   CapabilityPackExtension,
@@ -22,6 +31,8 @@ export type {
   CompatibilityReport,
   CompatibilityRunOptions,
   ExtensionDescriptor,
+  ExtensionDiagnosticEvent,
+  ExtensionDiagnosticSink,
   ExtensionLoader,
   FrameworkExtension,
   InitPreset,
@@ -55,7 +66,7 @@ export interface CreateAiyokeOptions {
 
 export async function createAiyoke(
   options: CreateAiyokeOptions = {}
-): Promise<import("./engine/index.js").AiyokeEngine> {
+): Promise<AiyokeEngineInstance> {
   const { AiyokeEngine } = await import("./engine/index.js");
   return AiyokeEngine.open(options.root, {
     ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
@@ -83,11 +94,3 @@ export async function renderSignedExtensionIsolated(
   const isolation = await import("./infrastructure/isolation/index.js");
   return isolation.renderSignedExtensionIsolated(options);
 }
-
-import type {
-  ExtensionLoader as RegisteredExtensionLoader,
-  SignedExtensionDiscoveryOptions as SignedDiscoveryOptions,
-  SignedExtensionDiscoveryResult as SignedDiscoveryResult,
-  IsolatedSignedExtensionOptions as SignedIsolationOptions,
-  IsolatedRendererResult as SignedIsolationResult
-} from "./extension-sdk/index.js";

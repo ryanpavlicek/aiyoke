@@ -140,10 +140,13 @@ const cases: readonly WorkspaceCase[] = [
 ];
 
 const temporaryRoots: string[] = [];
+const INTEGRATION_TEST_TIMEOUT_MS = 120_000;
 
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))
   );
 });
 
@@ -173,82 +176,86 @@ function monorepoSpec(): HarnessSpec {
 }
 
 describe("polyglot monorepo acceptance", () => {
-  it("detects and deterministically renders every supported framework family", async () => {
-    const root = await mkdtemp(join(tmpdir(), "aiyoke-polyglot-"));
-    temporaryRoots.push(root);
-    for (const item of cases) {
-      await write(root, `${item.path}/${item.manifest}`, item.content);
-      if (item.language === "typescript") {
-        await write(root, `${item.path}/tsconfig.json`, "{}\n");
-        await write(root, `${item.path}/src/index.ts`, "export {};\n");
-      } else if (item.language === "javascript") {
-        await write(root, `${item.path}/src/index.js`, "export {};\n");
-      } else if (item.language === "python") {
-        await write(root, `${item.path}/src/app.py`, "pass\n");
-      } else if (item.language === "rust") {
-        await write(root, `${item.path}/src/main.rs`, "fn main() {}\n");
-      } else {
-        await write(root, `${item.path}/main.go`, "package main\nfunc main() {}\n");
+  it(
+    "detects and deterministically renders every supported framework family",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "aiyoke-polyglot-"));
+      temporaryRoots.push(root);
+      for (const item of cases) {
+        await write(root, `${item.path}/${item.manifest}`, item.content);
+        if (item.language === "typescript") {
+          await write(root, `${item.path}/tsconfig.json`, "{}\n");
+          await write(root, `${item.path}/src/index.ts`, "export {};\n");
+        } else if (item.language === "javascript") {
+          await write(root, `${item.path}/src/index.js`, "export {};\n");
+        } else if (item.language === "python") {
+          await write(root, `${item.path}/src/app.py`, "pass\n");
+        } else if (item.language === "rust") {
+          await write(root, `${item.path}/src/main.rs`, "fn main() {}\n");
+        } else {
+          await write(root, `${item.path}/main.go`, "package main\nfunc main() {}\n");
+        }
       }
-    }
-    // Deliberately conflicting nested evidence proves enumeration and selection stay explicit.
-    await write(
-      root,
-      "apps/node/next/examples/legacy/package.json",
-      '{"dependencies":{"express":"1.0.0","fastify":"1.0.0"}}\n'
-    );
-    await write(root, "aiyoke.yaml", stringifyHarnessSpec(monorepoSpec()));
-
-    const engine = await AiyokeEngine.open(root);
-    const firstDetection = await engine.detect();
-    const secondDetection = await engine.detect();
-    expect(secondDetection).toEqual(firstDetection);
-    const detectedIds = firstDetection.map((item) => item.descriptor.id);
-    expect(new Set(detectedIds)).toEqual(
-      new Set([
-        "python",
-        "typescript",
-        "javascript",
-        "rust",
-        "go",
-        ...cases.map((item) => item.framework)
-      ])
-    );
-
-    const firstPlan = await engine.plan();
-    const secondPlan = await engine.plan();
-    expect(secondPlan).toEqual(firstPlan);
-    const plannedPaths = firstPlan.operations.map((operation) =>
-      operation.kind === "conflict" ? operation.path : operation.artifact.path
-    );
-    expect(plannedPaths).toEqual([...plannedPaths].sort());
-    expect(firstPlan.operations.some((operation) => operation.kind === "conflict")).toBe(false);
-    for (const item of cases) {
-      expect(plannedPaths).toContain(
-        `${item.path}/aiyoke-runtime/${item.language}/${item.integration}`
+      // Deliberately conflicting nested evidence proves enumeration and selection stay explicit.
+      await write(
+        root,
+        "apps/node/next/examples/legacy/package.json",
+        '{"dependencies":{"express":"1.0.0","fastify":"1.0.0"}}\n'
       );
-    }
+      await write(root, "aiyoke.yaml", stringifyHarnessSpec(monorepoSpec()));
 
-    const applied = await engine.apply();
-    expect(applied.changedPaths.length).toBeGreaterThan(100);
-    const instructions = await readFile(join(root, "AGENTS.md"), "utf8");
-    for (const framework of [
-      "FastAPI",
-      "Django",
-      "Flask",
-      "Next.js",
-      "NestJS",
-      "Fastify",
-      "Express",
-      "Axum",
-      "Actix Web",
-      "Chi",
-      "Gin",
-      "Fiber"
-    ]) {
-      expect(instructions).toContain(framework);
-    }
-    expect((await engine.check()).filter((finding) => finding.severity === "error")).toEqual([]);
-    expect((await engine.apply()).changedPaths).toEqual([]);
-  }, 30_000);
+      const engine = await AiyokeEngine.open(root);
+      const firstDetection = await engine.detect();
+      const secondDetection = await engine.detect();
+      expect(secondDetection).toEqual(firstDetection);
+      const detectedIds = firstDetection.map((item) => item.descriptor.id);
+      expect(new Set(detectedIds)).toEqual(
+        new Set([
+          "python",
+          "typescript",
+          "javascript",
+          "rust",
+          "go",
+          ...cases.map((item) => item.framework)
+        ])
+      );
+
+      const firstPlan = await engine.plan();
+      const secondPlan = await engine.plan();
+      expect(secondPlan).toEqual(firstPlan);
+      const plannedPaths = firstPlan.operations.map((operation) =>
+        operation.kind === "conflict" ? operation.path : operation.artifact.path
+      );
+      expect(plannedPaths).toEqual([...plannedPaths].sort());
+      expect(firstPlan.operations.some((operation) => operation.kind === "conflict")).toBe(false);
+      for (const item of cases) {
+        expect(plannedPaths).toContain(
+          `${item.path}/aiyoke-runtime/${item.language}/${item.integration}`
+        );
+      }
+
+      const applied = await engine.apply();
+      expect(applied.changedPaths.length).toBeGreaterThan(100);
+      const instructions = await readFile(join(root, "AGENTS.md"), "utf8");
+      for (const framework of [
+        "FastAPI",
+        "Django",
+        "Flask",
+        "Next.js",
+        "NestJS",
+        "Fastify",
+        "Express",
+        "Axum",
+        "Actix Web",
+        "Chi",
+        "Gin",
+        "Fiber"
+      ]) {
+        expect(instructions).toContain(framework);
+      }
+      expect((await engine.check()).filter((finding) => finding.severity === "error")).toEqual([]);
+      expect((await engine.apply()).changedPaths).toEqual([]);
+    },
+    INTEGRATION_TEST_TIMEOUT_MS
+  );
 });

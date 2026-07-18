@@ -1,5 +1,6 @@
 import { goIntegrations } from "./integrations/go.js";
 import { goRuntimeModules } from "./modules/go.js";
+import { goPolicyArtifact } from "./policy.js";
 import { goProviders } from "./providers/go.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
@@ -9,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"math/rand/v2"
 	"sort"
 	"sync"
 	"time"
@@ -39,23 +41,23 @@ type ModelRequest struct {
 }
 
 type Usage struct {
-	InputTokens      int
-	OutputTokens     int
-	EstimatedCostUSD float64
+	InputTokens      int     \`json:"inputTokens"\`
+	OutputTokens     int     \`json:"outputTokens"\`
+	EstimatedCostUSD float64 \`json:"estimatedCostUsd"\`
 }
 
 type ModelFailure struct {
-	Kind         FailureKind
-	Message      string
-	Retryable    bool
-	ProviderCode string
+	Kind         FailureKind \`json:"kind"\`
+	Message      string      \`json:"message"\`
+	Retryable    bool        \`json:"retryable"\`
+	ProviderCode string      \`json:"providerCode,omitempty"\`
 }
 
 type ModelResult interface{ modelResult() }
 
 type ModelSuccess struct {
-	Value any
-	Usage Usage
+	Value any   \`json:"data"\`
+	Usage Usage \`json:"usage"\`
 }
 
 func (ModelSuccess) modelResult() {}
@@ -91,7 +93,6 @@ type GuardStage string
 const (
 	GuardInput  GuardStage = "input"
 	GuardOutput GuardStage = "output"
-	GuardTool   GuardStage = "tool"
 )
 
 type GuardContext struct {
@@ -147,6 +148,7 @@ type RuntimeOptions struct {
 	MaxBatchSize            int
 	CircuitFailureThreshold int
 	CircuitResetAfter       time.Duration
+	CircuitHalfOpenAttempts int
 }
 
 type ExecuteOptions struct {
@@ -253,14 +255,19 @@ type CircuitBreaker struct {
 	openedAt         time.Time
 	failureThreshold int
 	resetAfter       time.Duration
+	halfOpenMaximum  int
+	halfOpenAttempts int
 }
 
-func NewCircuitBreaker(failureThreshold int, resetAfter time.Duration) (*CircuitBreaker, error) {
-	if failureThreshold < 1 || resetAfter <= 0 {
+func NewCircuitBreaker(
+	failureThreshold int, resetAfter time.Duration, halfOpenMaximum int,
+) (*CircuitBreaker, error) {
+	if failureThreshold < 1 || resetAfter <= 0 || halfOpenMaximum < 1 {
 		return nil, errors.New("circuit breaker limits must be positive")
 	}
 	return &CircuitBreaker{
 		state: CircuitClosed, failureThreshold: failureThreshold, resetAfter: resetAfter,
+		halfOpenMaximum: halfOpenMaximum,
 	}, nil
 }
 
@@ -269,12 +276,28 @@ func (breaker *CircuitBreaker) State(now time.Time) CircuitState {
 	defer breaker.mu.Unlock()
 	if breaker.state == CircuitOpen && now.Sub(breaker.openedAt) >= breaker.resetAfter {
 		breaker.state = CircuitHalfOpen
+		breaker.halfOpenAttempts = 0
 	}
 	return breaker.state
 }
 
 func (breaker *CircuitBreaker) Allow(now time.Time) bool {
-	return breaker.State(now) != CircuitOpen
+	breaker.mu.Lock()
+	defer breaker.mu.Unlock()
+	if breaker.state == CircuitOpen && now.Sub(breaker.openedAt) >= breaker.resetAfter {
+		breaker.state = CircuitHalfOpen
+		breaker.halfOpenAttempts = 0
+	}
+	if breaker.state == CircuitOpen {
+		return false
+	}
+	if breaker.state == CircuitHalfOpen {
+		if breaker.halfOpenAttempts >= breaker.halfOpenMaximum {
+			return false
+		}
+		breaker.halfOpenAttempts++
+	}
+	return true
 }
 
 func (breaker *CircuitBreaker) Success() {
@@ -282,6 +305,7 @@ func (breaker *CircuitBreaker) Success() {
 	defer breaker.mu.Unlock()
 	breaker.state = CircuitClosed
 	breaker.failures = 0
+	breaker.halfOpenAttempts = 0
 }
 
 func (breaker *CircuitBreaker) Failure(now time.Time) {
@@ -291,6 +315,7 @@ func (breaker *CircuitBreaker) Failure(now time.Time) {
 	if breaker.state == CircuitHalfOpen || breaker.failures >= breaker.failureThreshold {
 		breaker.state = CircuitOpen
 		breaker.openedAt = now
+		breaker.halfOpenAttempts = 0
 	}
 }
 
@@ -325,14 +350,14 @@ func NewHarnessRuntime(options RuntimeOptions, deps RuntimeDependencies) (*Harne
 	if options.MaxConcurrency < 1 || options.MaxBatchSize < 1 {
 		return nil, errors.New("concurrency and batch limits must be positive")
 	}
-	if options.CircuitFailureThreshold < 1 || options.CircuitResetAfter <= 0 {
+	if options.CircuitFailureThreshold < 1 || options.CircuitResetAfter <= 0 || options.CircuitHalfOpenAttempts < 1 {
 		return nil, errors.New("circuit breaker limits must be positive")
 	}
 	if deps.Clock == nil {
 		deps.Clock = time.Now
 	}
 	if deps.Random == nil {
-		deps.Random = func() float64 { return 0.5 }
+		deps.Random = rand.Float64
 	}
 	if deps.Sleep == nil {
 		deps.Sleep = sleepWithContext
@@ -645,6 +670,7 @@ func (runtime *HarnessRuntime) circuit(route string) *CircuitBreaker {
 	}
 	circuit, _ := NewCircuitBreaker(
 		runtime.options.CircuitFailureThreshold, runtime.options.CircuitResetAfter,
+		runtime.options.CircuitHalfOpenAttempts,
 	)
 	runtime.circuits[route] = circuit
 	return circuit
@@ -695,13 +721,59 @@ const TEST_SOURCE = `package aiyokeruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+type conformanceDocument struct {
+	SchemaVersion int \`json:"schemaVersion"\`
+	ProviderCases []struct {
+		StatusCode int            \`json:"statusCode"\`
+		Body       map[string]any \`json:"body"\`
+		Expected   struct {
+			FailureKind  string \`json:"failureKind"\`
+			ProviderCode string \`json:"providerCode"\`
+			Retryable    bool   \`json:"retryable"\`
+		} \`json:"expected"\`
+	} \`json:"providerCases"\`
+	OptionCases []struct {
+		Field    string \`json:"field"\`
+		Value    int    \`json:"value"\`
+		Expected string \`json:"expected"\`
+	} \`json:"optionCases"\`
+	Runtime struct {
+		SynchronousAdapterThrow string   \`json:"synchronousAdapterThrow"\`
+		GuardStages             []string \`json:"guardStages"\`
+	} \`json:"runtime"\`
+}
+
+func loadConformance(t *testing.T) conformanceDocument {
+	t.Helper()
+	_, file, _, ok := goruntime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate runtime test source")
+	}
+	content, err := os.ReadFile(filepath.Join(filepath.Dir(file), "conformance.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document conformanceDocument
+	if err := json.Unmarshal(content, &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.SchemaVersion != 1 {
+		t.Fatalf("unsupported conformance schema %d", document.SchemaVersion)
+	}
+	return document
+}
 
 func testOptions() RuntimeOptions {
 	return RuntimeOptions{
@@ -715,6 +787,7 @@ func testOptions() RuntimeOptions {
 		MaxBatchSize:            4,
 		CircuitFailureThreshold: 3,
 		CircuitResetAfter:       time.Second,
+		CircuitHalfOpenAttempts: 1,
 	}
 }
 
@@ -735,6 +808,16 @@ func TestRetryDelay(t *testing.T) {
 	}
 }
 
+func TestGeneratedRuntimeOptions(t *testing.T) {
+	options := GeneratedRuntimeOptions()
+	if options.Timeout != 30*time.Second || options.CircuitResetAfter != 30*time.Second {
+		t.Fatalf("generated policy units drifted: %#v", options)
+	}
+	if options.Retry.MaxAttempts != 3 || options.CircuitHalfOpenAttempts != 1 {
+		t.Fatalf("generated policy values drifted: %#v", options)
+	}
+}
+
 func TestBudget(t *testing.T) {
 	request := ModelRequest{MaxOutputTokens: 100}
 	if failure := EnforceBudget(request, 10, 10, 100); failure != nil {
@@ -746,7 +829,7 @@ func TestBudget(t *testing.T) {
 }
 
 func TestCircuitTransitions(t *testing.T) {
-	breaker, err := NewCircuitBreaker(2, 100*time.Millisecond)
+	breaker, err := NewCircuitBreaker(2, 100*time.Millisecond, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -768,11 +851,81 @@ func TestCircuitTransitions(t *testing.T) {
 	}
 }
 
+func TestSharedConformance(t *testing.T) {
+	document := loadConformance(t)
+	if fmt.Sprint(document.Runtime.GuardStages) != "[input output]" {
+		t.Fatalf("unexpected guard stages: %v", document.Runtime.GuardStages)
+	}
+	for _, vector := range document.OptionCases {
+		options := testOptions()
+		switch vector.Field {
+		case "circuitFailureThreshold":
+			options.CircuitFailureThreshold = vector.Value
+		case "circuitResetAfterMs":
+			options.CircuitResetAfter = time.Duration(vector.Value) * time.Millisecond
+		case "circuitHalfOpenMaxAttempts":
+			options.CircuitHalfOpenAttempts = vector.Value
+		default:
+			t.Fatalf("unknown option vector %q", vector.Field)
+		}
+		if _, err := NewHarnessRuntime(options, RuntimeDependencies{Adapters: NewAdapterRegistry()}); err == nil {
+			t.Fatalf("%s must fail during construction", vector.Field)
+		}
+	}
+}
+
+func TestHalfOpenProbesAreBounded(t *testing.T) {
+	breaker, err := NewCircuitBreaker(1, 100*time.Millisecond, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	breaker.Failure(start)
+	if !breaker.Allow(start.Add(100 * time.Millisecond)) {
+		t.Fatal("first probe was rejected")
+	}
+	if breaker.Allow(start.Add(100 * time.Millisecond)) {
+		t.Fatal("excess probe was allowed")
+	}
+	breaker.Success()
+	if !breaker.Allow(start.Add(101 * time.Millisecond)) {
+		t.Fatal("closed circuit rejected request")
+	}
+}
+
 type failingAdapter struct{ calls int }
 
 func (adapter *failingAdapter) Invoke(context.Context, ModelRequest) ModelResult {
 	adapter.calls++
 	return ModelFailure{Kind: FailureRateLimit, Message: "busy", Retryable: true}
+}
+
+type panickingAdapter struct{}
+
+func (panickingAdapter) Invoke(context.Context, ModelRequest) ModelResult {
+	panic("synchronous adapter failure")
+}
+
+func TestSynchronousAdapterPanicIsContained(t *testing.T) {
+	if loadConformance(t).Runtime.SynchronousAdapterThrow != "provider-failure" {
+		t.Fatal("unexpected adapter throw contract")
+	}
+	options := testOptions()
+	options.Retry.MaxAttempts = 1
+	options.FallbackRoutes = nil
+	adapters := NewAdapterRegistry()
+	if err := adapters.Register("primary", panickingAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewHarnessRuntime(options, RuntimeDependencies{Adapters: adapters})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := runtime.Execute(context.Background(), testRequest("panic"), ExecuteOptions{})
+	failure, ok := result.(ModelFailure)
+	if !ok || failure.Kind != FailureProvider {
+		t.Fatalf("panic escaped containment: %#v", result)
+	}
 }
 
 type fallbackAdapter struct{}
@@ -1156,6 +1309,7 @@ export const goRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "runtime_test.go",
   testSource: TEST_SOURCE,
+  policyArtifact: goPolicyArtifact,
   modules: goRuntimeModules,
   integrations: goIntegrations,
   providers: goProviders

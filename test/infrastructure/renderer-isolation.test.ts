@@ -1,5 +1,5 @@
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -190,6 +190,30 @@ describe("isolated signed renderers", () => {
     );
   }, 15_000);
 
+  it("escalates termination when a renderer ignores SIGTERM", async () => {
+    const markerName = "survived-after-timeout.txt";
+    const fixture = await signedRenderer(`
+      process.on("SIGTERM", () => {});
+      setTimeout(async () => {
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(${JSON.stringify(markerName)}, "survived", "utf8");
+      }, 1500);
+      await new Promise(() => {});
+    `);
+    const marker = join(fixture.packageRoot, markerName);
+    const result = await renderSignedExtensionIsolated({
+      ...fixture,
+      consent: { kind: "granted", manifestDigest: fixture.manifestDigest },
+      invocation: invocation(),
+      limits: { timeoutMs: 250 }
+    });
+    expect(result).toEqual(
+      expect.objectContaining({ kind: "rejected", reason: "isolation-timeout" })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1_750));
+    await expect(readFile(marker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  }, 15_000);
+
   it("cancels an active renderer", async () => {
     const fixture = await signedRenderer("await new Promise(() => {});");
     const controller = new AbortController();
@@ -221,6 +245,93 @@ describe("isolated signed renderers", () => {
       expect.objectContaining({ kind: "rejected", reason: "isolation-failed" })
     );
   }, 20_000);
+
+  it("emits opt-in sanitized renderer stage diagnostics", async () => {
+    const events: Array<{ boundary: string; stage: string; reason: string }> = [];
+    const result = await render(
+      `return [{ path: "../escape.md", content: "secret detail", source: "isolated-target", executable: false, ownership: "generated" }];`,
+      { diagnostics: { emit: (event: (typeof events)[number]) => void events.push(event) } }
+    );
+    expect(result).toEqual(
+      expect.objectContaining({ kind: "rejected", reason: "isolation-failed" })
+    );
+    expect(events).toEqual([
+      { boundary: "isolation", stage: "renderer", reason: "artifacts-failed" }
+    ]);
+    expect(JSON.stringify(events)).not.toContain("secret detail");
+  });
+
+  it.each([
+    ".git/hooks/pre-commit",
+    "aiyoke.yaml",
+    ".aiyoke/backups/recovery.yaml",
+    ".aiyoke/lock.json"
+  ])("rejects isolated output to reserved destination %s", async (path) => {
+    const result = await render(
+      `return [{ path: ${JSON.stringify(path)}, content: "bad", source: "isolated-target", executable: true, ownership: "generated" }];`
+    );
+    expect(result).toEqual(
+      expect.objectContaining({ kind: "rejected", reason: "isolation-failed" })
+    );
+  });
+
+  it("filters environment secrets and nested dependencies from renderer snapshots", async () => {
+    const fixture = await signedRenderer(`
+      const paths = context.workspace.files;
+      const reads = Object.fromEntries(await Promise.all(
+        [".env", ".env.local", ".env.example", "packages/app/node_modules/pkg/index.js", "package.json"]
+          .map(async (path) => [path, await context.workspace.read(path)])
+      ));
+      return [{
+        path: "generated/snapshot.json",
+        content: JSON.stringify({ paths, reads }),
+        source: "isolated-target",
+        executable: false,
+        ownership: "generated"
+      }];
+    `);
+    const base = invocation();
+    const values: Readonly<Record<string, string>> = {
+      ".env": "SECRET=one",
+      ".env.local": "SECRET=two",
+      ".env.example": "SECRET=replace-me",
+      "packages/app/node_modules/pkg/index.js": "dependency",
+      "package.json": "{}"
+    };
+    const result = await renderSignedExtensionIsolated({
+      ...fixture,
+      consent: { kind: "granted", manifestDigest: fixture.manifestDigest },
+      invocation: {
+        ...base,
+        context: {
+          ...base.context,
+          workspace: {
+            root: "C:/fixture",
+            files: Object.keys(values),
+            async read(path: string) {
+              return values[path];
+            },
+            async exists(path: string) {
+              return values[path] !== undefined;
+            }
+          }
+        }
+      },
+      limits: { maxWorkspaceFiles: 2 }
+    });
+    expect(result.kind).toBe("rendered");
+    if (result.kind === "rendered") {
+      const payload = JSON.parse(result.artifacts[0]?.content ?? "null") as {
+        readonly paths: readonly string[];
+        readonly reads: Readonly<Record<string, string | undefined>>;
+      };
+      expect(payload.paths).toEqual([".env.example", "package.json"]);
+      expect(payload.reads).toEqual({
+        ".env.example": "SECRET=replace-me",
+        "package.json": "{}"
+      });
+    }
+  }, 15_000);
 
   it("rejects bounded input before spawning a renderer", async () => {
     const result = await render(

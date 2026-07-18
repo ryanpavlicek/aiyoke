@@ -274,7 +274,10 @@ impl ModelAdapter<ResponsesInput, ResponsesOutput> for ResponsesApiAdapter {
                 "",
             );
         }
-        if !(200..300).contains(&response.status_code) || response.error.is_some() {
+        if !(200..300).contains(&response.status_code)
+            || response.error.is_some()
+            || response.status == "failed"
+        {
             let provider_error = response.error.unwrap_or(ResponsesTransportError {
                 message: "The provider rejected the request.".to_owned(),
                 code: response.status_code.to_string(),
@@ -339,6 +342,8 @@ mod responses_provider;
 #[path = "runtime.rs"]
 mod runtime;
 
+const CONFORMANCE: &str = include_str!("conformance.json");
+
 use responses_provider::*;
 use runtime::{
     AdapterRegistry, CancellationToken, InvocationContext, ModelAdapter, ModelRequest, ModelResult,
@@ -401,6 +406,37 @@ fn success_response() -> ResponsesTransportResponse {
         },
         error: None,
         encoded_size_bytes: 128,
+    }
+}
+
+#[test]
+fn classifies_shared_provider_failure_vector() {
+    assert!(CONFORMANCE.contains(r#""id": "http-200-failed-response""#));
+    assert!(CONFORMANCE.contains(r#""providerCode": "response_failed""#));
+    let transport = Arc::new(FakeTransport {
+        response: ResponsesTransportResponse {
+            status: "failed".to_owned(),
+            error: Some(ResponsesTransportError {
+                message: "provider rejected response".to_owned(),
+                code: "response_failed".to_owned(),
+            }),
+            ..success_response()
+        },
+        authorization: Mutex::new(String::new()),
+    });
+    let adapter = ResponsesApiAdapter::new(
+        ResponsesAdapterConfig::for_provider(ResponsesProvider::OpenRouter, "test/model"),
+        Arc::new(|_: &str| Some("secret".to_owned())),
+        transport,
+    )
+    .unwrap();
+    match adapter.invoke(&request(), &context()) {
+        ModelResult::Failure(failure) => {
+            assert_eq!(failure.kind, runtime::FailureKind::Provider);
+            assert_eq!(failure.provider_code.as_deref(), Some("response_failed"));
+            assert!(!failure.retryable);
+        }
+        ModelResult::Success { .. } => panic!("failed response was classified as success"),
     }
 }
 

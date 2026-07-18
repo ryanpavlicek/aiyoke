@@ -17,6 +17,14 @@ import {
 const DEFAULT_MAX_PACKAGE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_PACKAGE_FILES = 2_000;
 
+function diagnostic(options: SignedExtensionDiscoveryOptions, stage: string, reason: string): void {
+  try {
+    options.diagnostics?.emit({ boundary: "discovery", stage, reason });
+  } catch {
+    // Diagnostics are opt-in and never alter trust decisions.
+  }
+}
+
 interface PackageEntry {
   readonly path: string;
   readonly content: Uint8Array;
@@ -130,6 +138,7 @@ export async function verifySignedExtensionPackage(
   try {
     manifest = parseSignedExtensionManifest(await readFile(resolve(options.manifestPath), "utf8"));
   } catch {
+    diagnostic(options, "manifest-read", "manifest-invalid");
     return {
       kind: "rejected",
       reason: "manifest-invalid",
@@ -145,6 +154,7 @@ export async function verifySignedExtensionPackage(
       options.maxPackageFiles ?? DEFAULT_MAX_PACKAGE_FILES
     );
   } catch {
+    diagnostic(options, "package-snapshot", "package-invalid");
     return {
       kind: "rejected",
       reason: "package-invalid",
@@ -159,7 +169,12 @@ export async function verifySignedExtensionPackage(
     options.consent,
     new NodeManifestCrypto()
   );
-  if (verification.kind !== "trusted") return verification;
+  if (verification.kind !== "trusted") {
+    if (verification.kind === "rejected") {
+      diagnostic(options, "manifest-verification", verification.reason);
+    }
+    return verification;
+  }
 
   try {
     const secondPackage = await packageEntries(
@@ -168,6 +183,7 @@ export async function verifySignedExtensionPackage(
       options.maxPackageFiles ?? DEFAULT_MAX_PACKAGE_FILES
     );
     if (contentDigest(secondPackage.entries) !== actualDigest) {
+      diagnostic(options, "package-resnapshot", "package-changed");
       return {
         kind: "rejected",
         reason: "package-invalid",
@@ -197,6 +213,7 @@ export async function verifySignedExtensionPackage(
       entrypointPath: entrypointRealPath
     };
   } catch {
+    diagnostic(options, "entrypoint-validation", "package-invalid");
     return {
       kind: "rejected",
       reason: "package-invalid",
@@ -230,6 +247,7 @@ export async function discoverSignedExtension(
       contentDigest: verification.contentDigest
     };
   } catch {
+    diagnostic(options, "module-import", "module-invalid");
     return {
       kind: "rejected",
       reason: "module-invalid",

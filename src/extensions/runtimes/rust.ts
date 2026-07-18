@@ -1,14 +1,15 @@
 import { rustIntegrations } from "./integrations/rust.js";
 import { rustRuntimeModules } from "./modules/rust.js";
+import { rustPolicyArtifact } from "./policy.js";
 import { rustProviders } from "./providers/rust.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
 const SOURCE = `use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FailureKind {
@@ -21,6 +22,22 @@ pub enum FailureKind {
     BudgetExhausted,
     CircuitOpen,
     Cancelled,
+}
+
+impl FailureKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Timeout => "timeout",
+            Self::RateLimit => "rate-limit",
+            Self::Provider => "provider",
+            Self::InvalidOutput => "invalid-output",
+            Self::GuardRejected => "guard-rejected",
+            Self::ApprovalRequired => "approval-required",
+            Self::BudgetExhausted => "budget-exhausted",
+            Self::CircuitOpen => "circuit-open",
+            Self::Cancelled => "cancelled",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -97,10 +114,6 @@ pub trait InputGuard<T>: Send + Sync {
 
 pub trait OutputGuard<T, O>: Send + Sync {
     fn check(&self, request: &ModelRequest<T>, output: &O) -> Result<(), String>;
-}
-
-pub trait ToolGuard: Send + Sync {
-    fn check(&self, tool: &str) -> Result<(), String>;
 }
 
 pub trait CachePort<T>: Send + Sync {
@@ -181,6 +194,7 @@ pub struct RuntimeOptions {
     pub max_batch_size: usize,
     pub circuit_failure_threshold: u32,
     pub circuit_reset_after: Duration,
+    pub circuit_half_open_max_attempts: u32,
 }
 
 pub struct ExecuteOptions<O> {
@@ -242,7 +256,6 @@ impl<I, O> Default for AdapterRegistry<I, O> {
 pub struct GuardRegistry<I, O> {
     input: Vec<Arc<dyn InputGuard<I>>>,
     output: Vec<Arc<dyn OutputGuard<I, O>>>,
-    tools: BTreeMap<String, Vec<Arc<dyn ToolGuard>>>,
 }
 
 impl<I, O> GuardRegistry<I, O> {
@@ -250,7 +263,6 @@ impl<I, O> GuardRegistry<I, O> {
         Self {
             input: Vec::new(),
             output: Vec::new(),
-            tools: BTreeMap::new(),
         }
     }
 
@@ -260,10 +272,6 @@ impl<I, O> GuardRegistry<I, O> {
 
     pub fn register_output(&mut self, guard: Arc<dyn OutputGuard<I, O>>) {
         self.output.push(guard);
-    }
-
-    pub fn register_tool(&mut self, tool: impl Into<String>, guard: Arc<dyn ToolGuard>) {
-        self.tools.entry(tool.into()).or_default().push(guard);
     }
 }
 
@@ -289,6 +297,20 @@ pub fn retry_delay(
     let random = random_value.clamp(0.0, 1.0);
     let jitter = bounded.mul_f64(jitter_ratio * random);
     Ok(bounded.saturating_add(jitter))
+}
+
+fn system_random() -> f64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_nanos() as u64;
+    let mut value = timestamp ^ COUNTER.fetch_add(0x9e37_79b9_7f4a_7c15, Ordering::Relaxed);
+    value ^= value >> 12;
+    value ^= value << 25;
+    value ^= value >> 27;
+    let sample = value.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 11;
+    sample as f64 / ((1_u64 << 53) as f64)
 }
 
 pub fn enforce_budget<T>(
@@ -321,11 +343,17 @@ pub struct CircuitBreaker {
     opened_at: Option<Instant>,
     failure_threshold: u32,
     reset_after: Duration,
+    half_open_max_attempts: u32,
+    half_open_attempts: u32,
 }
 
 impl CircuitBreaker {
-    pub fn new(failure_threshold: u32, reset_after: Duration) -> Result<Self, &'static str> {
-        if failure_threshold == 0 || reset_after.is_zero() {
+    pub fn new(
+        failure_threshold: u32,
+        reset_after: Duration,
+        half_open_max_attempts: u32,
+    ) -> Result<Self, &'static str> {
+        if failure_threshold == 0 || reset_after.is_zero() || half_open_max_attempts == 0 {
             return Err("circuit breaker limits must be positive");
         }
         Ok(Self {
@@ -334,6 +362,8 @@ impl CircuitBreaker {
             opened_at: None,
             failure_threshold,
             reset_after,
+            half_open_max_attempts,
+            half_open_attempts: 0,
         })
     }
 
@@ -344,18 +374,30 @@ impl CircuitBreaker {
                 .is_some_and(|opened| now.duration_since(opened) >= self.reset_after)
         {
             self.state = CircuitState::HalfOpen;
+            self.half_open_attempts = 0;
         }
         self.state
     }
 
     pub fn allow(&mut self, now: Instant) -> bool {
-        self.state(now) != CircuitState::Open
+        let state = self.state(now);
+        if state == CircuitState::Open {
+            return false;
+        }
+        if state == CircuitState::HalfOpen {
+            if self.half_open_attempts >= self.half_open_max_attempts {
+                return false;
+            }
+            self.half_open_attempts = self.half_open_attempts.saturating_add(1);
+        }
+        true
     }
 
     pub fn success(&mut self) {
         self.state = CircuitState::Closed;
         self.failures = 0;
         self.opened_at = None;
+        self.half_open_attempts = 0;
     }
 
     pub fn failure(&mut self, now: Instant) {
@@ -363,6 +405,7 @@ impl CircuitBreaker {
         if self.state == CircuitState::HalfOpen || self.failures >= self.failure_threshold {
             self.state = CircuitState::Open;
             self.opened_at = Some(now);
+            self.half_open_attempts = 0;
         }
     }
 }
@@ -460,7 +503,10 @@ where
         if options.max_concurrency == 0 || options.max_batch_size == 0 {
             return Err("concurrency and batch limits must be positive".to_owned());
         }
-        if options.circuit_failure_threshold == 0 || options.circuit_reset_after.is_zero() {
+        if options.circuit_failure_threshold == 0
+            || options.circuit_reset_after.is_zero()
+            || options.circuit_half_open_max_attempts == 0
+        {
             return Err("circuit breaker limits must be positive".to_owned());
         }
         let maximum = options.max_concurrency;
@@ -474,7 +520,7 @@ where
                 changed: Condvar::new(),
                 maximum,
             },
-            random_value: || 0.5,
+            random_value: system_random,
         })
     }
 
@@ -879,6 +925,7 @@ where
                 CircuitBreaker::new(
                     self.options.circuit_failure_threshold,
                     self.options.circuit_reset_after,
+                    self.options.circuit_half_open_max_attempts,
                 )
                 .expect("runtime options validate circuit settings")
             })
@@ -979,8 +1026,12 @@ fn sleep_cancellable(delay: Duration, cancellation: &CancellationToken) -> bool 
 }
 `;
 
-const TEST_SOURCE = `#[path = "runtime.rs"]
+const TEST_SOURCE = `#[path = "policy.rs"]
+mod policy;
+#[path = "runtime.rs"]
 mod runtime;
+
+const CONFORMANCE: &str = include_str!("conformance.json");
 
 use runtime::{
     enforce_budget, retry_delay, AdapterRegistry, CircuitBreaker, ExecuteOptions, FailureKind,
@@ -1024,7 +1075,70 @@ fn test_options() -> RuntimeOptions {
         max_batch_size: 4,
         circuit_failure_threshold: 3,
         circuit_reset_after: Duration::from_secs(1),
+        circuit_half_open_max_attempts: 1,
     }
+}
+
+fn conformance_option_value(field: &str) -> u64 {
+    let field_marker = format!(r#""field": "{field}""#);
+    let tail = CONFORMANCE
+        .split_once(&field_marker)
+        .unwrap_or_else(|| panic!("missing conformance option {field}"))
+        .1;
+    let value = tail
+        .split_once(r#""value":"#)
+        .expect("option value is missing")
+        .1
+        .trim_start();
+    value
+        .split(|character: char| !character.is_ascii_digit())
+        .next()
+        .expect("option value is empty")
+        .parse()
+        .expect("option value is not an integer")
+}
+
+#[test]
+fn shared_conformance_options_fail_during_construction() {
+    assert!(CONFORMANCE.contains(r#""schemaVersion": 1"#));
+    assert!(CONFORMANCE.contains("guardStages"));
+    assert!(CONFORMANCE.contains(r#""input""#));
+    assert!(CONFORMANCE.contains(r#""output""#));
+    let mut options = test_options();
+    options.circuit_failure_threshold = conformance_option_value("circuitFailureThreshold") as u32;
+    assert!(HarnessRuntime::<(), ()>::new(
+        options,
+        AdapterRegistry::new(),
+        RuntimePorts::default()
+    )
+    .is_err());
+    let mut options = test_options();
+    options.circuit_reset_after =
+        Duration::from_millis(conformance_option_value("circuitResetAfterMs"));
+    assert!(HarnessRuntime::<(), ()>::new(
+        options,
+        AdapterRegistry::new(),
+        RuntimePorts::default()
+    )
+    .is_err());
+    let mut options = test_options();
+    options.circuit_half_open_max_attempts =
+        conformance_option_value("circuitHalfOpenMaxAttempts") as u32;
+    assert!(HarnessRuntime::<(), ()>::new(
+        options,
+        AdapterRegistry::new(),
+        RuntimePorts::default()
+    )
+    .is_err());
+}
+
+#[test]
+fn generated_policy_preserves_units_and_values() {
+    let options = policy::generated_runtime_options();
+    assert_eq!(options.timeout, Duration::from_secs(30));
+    assert_eq!(options.circuit_reset_after, Duration::from_secs(30));
+    assert_eq!(options.retry.max_attempts, 3);
+    assert_eq!(options.circuit_half_open_max_attempts, 1);
 }
 
 #[test]
@@ -1063,7 +1177,7 @@ fn token_budget_fails_closed() {
 #[test]
 fn circuit_opens_half_opens_and_closes() {
     let start = Instant::now();
-    let mut breaker = CircuitBreaker::new(2, Duration::from_millis(100)).unwrap();
+    let mut breaker = CircuitBreaker::new(2, Duration::from_millis(100), 1).unwrap();
     breaker.failure(start);
     assert!(breaker.allow(start + Duration::from_millis(1)));
     breaker.failure(start + Duration::from_millis(2));
@@ -1071,6 +1185,46 @@ fn circuit_opens_half_opens_and_closes() {
     assert!(breaker.allow(start + Duration::from_millis(102)));
     breaker.success();
     assert!(breaker.allow(start + Duration::from_millis(103)));
+}
+
+#[test]
+fn half_open_probes_are_bounded() {
+    let start = Instant::now();
+    let mut breaker = CircuitBreaker::new(1, Duration::from_millis(100), 1).unwrap();
+    breaker.failure(start);
+    assert!(breaker.allow(start + Duration::from_millis(100)));
+    assert!(!breaker.allow(start + Duration::from_millis(100)));
+    breaker.success();
+    assert!(breaker.allow(start + Duration::from_millis(101)));
+}
+
+struct PanickingAdapter;
+
+impl ModelAdapter<(), String> for PanickingAdapter {
+    fn invoke(
+        &self,
+        _request: &ModelRequest<()>,
+        _context: &InvocationContext,
+    ) -> ModelResult<String> {
+        panic!("synchronous adapter failure")
+    }
+}
+
+#[test]
+fn synchronous_adapter_panic_is_contained() {
+    assert!(CONFORMANCE.contains(r#""synchronousAdapterThrow": "provider-failure""#));
+    let mut adapters = AdapterRegistry::new();
+    adapters
+        .register("primary", Arc::new(PanickingAdapter))
+        .unwrap();
+    let mut options = test_options();
+    options.retry.max_attempts = 1;
+    options.fallback_routes.clear();
+    let runtime = HarnessRuntime::new(options, adapters, RuntimePorts::default()).unwrap();
+    match runtime.execute(test_request("panic"), &ExecuteOptions::default()) {
+        ModelResult::Failure(failure) => assert_eq!(failure.kind, FailureKind::Provider),
+        ModelResult::Success { .. } => panic!("panicking adapter unexpectedly succeeded"),
+    }
 }
 
 struct FailingAdapter {
@@ -1564,6 +1718,7 @@ export const rustRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "runtime_test.rs",
   testSource: TEST_SOURCE,
+  policyArtifact: rustPolicyArtifact,
   modules: rustRuntimeModules,
   integrations: rustIntegrations,
   providers: rustProviders

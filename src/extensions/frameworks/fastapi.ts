@@ -1,7 +1,1 @@
-export {
-  createFastApiFrameworkLoader,
-  fastApiFrameworkLoader,
-  fastapi,
-  fastapiLoader,
-  fastapiLoader as loader
-} from "./python.js";
+export { createFastApiFrameworkLoader, fastApiFrameworkLoader, fastapi } from "./python.js";

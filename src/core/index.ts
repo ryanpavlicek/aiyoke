@@ -55,3 +55,7 @@ export {
   type TokenBudgetPolicy,
   type VerificationFinding
 } from "./model.js";
+export {
+  type ModuleDefinitionConflict,
+  moduleDefinitionConflicts
+} from "./module-conflicts.js";

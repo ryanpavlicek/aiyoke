@@ -1,5 +1,6 @@
 import { javaScriptIntegrations } from "./integrations/javascript.js";
 import { javaScriptRuntimeModules } from "./modules/javascript.js";
+import { javascriptPolicyArtifact } from "./policy.js";
 import { javaScriptProviders } from "./providers/javascript.js";
 import { createRuntimeTemplate, runtimeLoader } from "./shared.js";
 
@@ -53,31 +54,53 @@ export function enforceBudget(request, inputTokens, maxInputTokens, maxOutputTok
 export class CircuitBreaker {
     failureThreshold;
     resetAfterMs;
+    halfOpenMaxAttempts;
     #state = "closed";
     #failures = 0;
     #openedAt = 0;
-    constructor(failureThreshold, resetAfterMs) {
+    #halfOpenAttempts = 0;
+    constructor(failureThreshold, resetAfterMs, halfOpenMaxAttempts = 1) {
         this.failureThreshold = failureThreshold;
         this.resetAfterMs = resetAfterMs;
+        this.halfOpenMaxAttempts = halfOpenMaxAttempts;
+        if (!Number.isInteger(failureThreshold) || failureThreshold < 1) {
+            throw new RangeError("failureThreshold must be positive");
+        }
+        if (resetAfterMs <= 0)
+            throw new RangeError("resetAfterMs must be positive");
+        if (!Number.isInteger(halfOpenMaxAttempts) || halfOpenMaxAttempts < 1) {
+            throw new RangeError("halfOpenMaxAttempts must be positive");
+        }
     }
     state(now = Date.now()) {
         if (this.#state === "open" && now - this.#openedAt >= this.resetAfterMs) {
             this.#state = "half-open";
+            this.#halfOpenAttempts = 0;
         }
         return this.#state;
     }
     allow(now = Date.now()) {
-        return this.state(now) !== "open";
+        const state = this.state(now);
+        if (state === "open")
+            return false;
+        if (state === "half-open") {
+            if (this.#halfOpenAttempts >= this.halfOpenMaxAttempts)
+                return false;
+            this.#halfOpenAttempts += 1;
+        }
+        return true;
     }
     success() {
         this.#state = "closed";
         this.#failures = 0;
+        this.#halfOpenAttempts = 0;
     }
     failure(now = Date.now()) {
         this.#failures += 1;
         if (this.#state === "half-open" || this.#failures >= this.failureThreshold) {
             this.#state = "open";
             this.#openedAt = now;
+            this.#halfOpenAttempts = 0;
         }
     }
 }
@@ -155,6 +178,16 @@ export class HarnessRuntime {
             throw new RangeError("maxConcurrency must be positive");
         if (options.maxBatchSize < 1)
             throw new RangeError("maxBatchSize must be positive");
+        if (!Number.isInteger(options.circuitFailureThreshold) || options.circuitFailureThreshold < 1) {
+            throw new RangeError("circuitFailureThreshold must be positive");
+        }
+        if (options.circuitResetAfterMs <= 0) {
+            throw new RangeError("circuitResetAfterMs must be positive");
+        }
+        if (!Number.isInteger(options.circuitHalfOpenMaxAttempts) ||
+            options.circuitHalfOpenMaxAttempts < 1) {
+            throw new RangeError("circuitHalfOpenMaxAttempts must be positive");
+        }
         this.#gate = new ConcurrencyGate(options.maxConcurrency);
         this.#now = dependencies.now ?? Date.now;
         this.#random = dependencies.random ?? Math.random;
@@ -367,7 +400,7 @@ export class HarnessRuntime {
         const existing = this.#circuits.get(route);
         if (existing !== undefined)
             return existing;
-        const circuit = new CircuitBreaker(this.options.circuitFailureThreshold, this.options.circuitResetAfterMs);
+        const circuit = new CircuitBreaker(this.options.circuitFailureThreshold, this.options.circuitResetAfterMs, this.options.circuitHalfOpenMaxAttempts);
         this.#circuits.set(route, circuit);
         return circuit;
     }
@@ -389,7 +422,9 @@ export class HarnessRuntime {
             }, { once: true });
         });
         try {
-            const invocation = Promise.resolve(adapter.invoke(request, controller.signal)).catch((error) => failed("provider", error instanceof Error ? error.message : "The provider adapter failed.", true));
+            const invocation = Promise.resolve()
+                .then(() => adapter.invoke(request, controller.signal))
+                .catch((error) => failed("provider", error instanceof Error ? error.message : "The provider adapter failed.", true));
             return await Promise.race([invocation, aborted]);
         }
         finally {
@@ -463,8 +498,16 @@ export class HarnessRuntime {
 `;
 
 const TEST_SOURCE = `import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runtimeOptions as generatedRuntimeOptions } from "./policy.js";
 import { AdapterRegistry, CircuitBreaker, GuardRegistry, HarnessRuntime, enforceBudget, retryDelayMs } from "./runtime.js";
+const conformance = JSON.parse(readFileSync(new URL("./conformance.json", import.meta.url), "utf8"));
+const policy = JSON.parse(readFileSync(new URL("./policy.json", import.meta.url), "utf8"));
+assert.equal(conformance.schemaVersion, 1);
+assert.deepEqual(conformance.runtime.guardStages, ["input", "output"]);
+assert.equal(policy.schemaVersion, 1);
+assert.equal(generatedRuntimeOptions.timeoutMs, policy.policy.reliability.timeoutMs);
 const request = {
     id: "request-1",
     route: "primary",
@@ -484,8 +527,15 @@ const options = {
     maxConcurrency: 2,
     maxBatchSize: 4,
     circuitFailureThreshold: 3,
-    circuitResetAfterMs: 1_000
+    circuitResetAfterMs: 1_000,
+    circuitHalfOpenMaxAttempts: 1
 };
+test("shared conformance options fail during construction", () => {
+    for (const vector of conformance.optionCases) {
+        assert.equal(vector.expected, "construction-error");
+        assert.throws(() => new HarnessRuntime({ ...options, [vector.field]: vector.value }, { adapters: new AdapterRegistry() }), RangeError);
+    }
+});
 test("bounded retry delay is deterministic with injected randomness", () => {
     assert.equal(retryDelayMs(2, 100, 1_000, 0.5, () => 0), 200);
     assert.throws(() => retryDelayMs(0, 100, 1_000, 0, () => 0));
@@ -503,6 +553,28 @@ test("circuit breaker opens, half-opens, and resets", () => {
     assert.equal(breaker.allow(102), true);
     breaker.success();
     assert.equal(breaker.allow(103), true);
+});
+test("half-open probes are bounded", () => {
+    const breaker = new CircuitBreaker(1, 100, 1);
+    breaker.failure(0);
+    assert.equal(breaker.allow(100), true);
+    assert.equal(breaker.allow(100), false);
+    breaker.success();
+    assert.equal(breaker.allow(101), true);
+});
+test("synchronous adapter throws are contained as provider failures", async () => {
+    assert.equal(conformance.runtime.synchronousAdapterThrow, "provider-failure");
+    const runtime = new HarnessRuntime({ ...options, fallbackRoutes: [], retry: { ...options.retry, maxAttempts: 1 } }, {
+        adapters: new AdapterRegistry().register("primary", {
+            invoke() {
+                throw new Error("synchronous adapter failure");
+            }
+        })
+    });
+    const result = await runtime.execute(request);
+    assert.equal(result.kind, "failure");
+    if (result.kind === "failure")
+        assert.equal(result.failure.kind, "provider");
 });
 test("runtime retries, falls back, repairs output, and emits redacted events", async () => {
     let primaryCalls = 0;
@@ -752,7 +824,8 @@ test("survives deterministic policy pressure without exceeding resource bounds",
         retry: { ...options.retry, maxAttempts: 1 },
         fallbackRoutes: [],
         circuitFailureThreshold: 2,
-        circuitResetAfterMs: 100
+        circuitResetAfterMs: 100,
+        circuitHalfOpenMaxAttempts: 1
     }, {
         adapters: new AdapterRegistry().register("primary", {
             async invoke() {
@@ -785,6 +858,7 @@ export const javascriptRuntime = createRuntimeTemplate({
   source: SOURCE,
   testFileName: "runtime.test.js",
   testSource: TEST_SOURCE,
+  policyArtifact: javascriptPolicyArtifact,
   modules: javaScriptRuntimeModules,
   integrations: javaScriptIntegrations,
   providers: javaScriptProviders

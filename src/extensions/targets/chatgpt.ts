@@ -134,14 +134,4 @@ export function createChatGptLoader() {
   return loaderFor(chatGptTarget as TargetImplementation);
 }
 
-export const createChatGptTargetLoader = createChatGptLoader;
-
-/** Alias retaining the conventional all-caps product spelling. */
-export const chatGPTTarget = chatGptTarget;
-export const createChatGPTLoader = createChatGptLoader;
-export const createChatGPTTargetLoader = createChatGptLoader;
 export const chatGptLoader = createChatGptLoader();
-export const chatGPTLoader = chatGptLoader;
-export const chatGptTargetLoader = chatGptLoader;
-export const chatGPTTargetLoader = chatGptLoader;
-export default createChatGptLoader;

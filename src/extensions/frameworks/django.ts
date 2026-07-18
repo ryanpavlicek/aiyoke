@@ -1,7 +1,1 @@
-export {
-  createDjangoFrameworkLoader,
-  django,
-  djangoFrameworkLoader,
-  djangoLoader,
-  djangoLoader as loader
-} from "./python.js";
+export { createDjangoFrameworkLoader, django, djangoFrameworkLoader } from "./python.js";

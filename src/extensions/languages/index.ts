@@ -31,11 +31,11 @@ export {
 };
 
 export const languageLoaders = [
-  createPythonLanguageLoader(),
-  createTypeScriptLanguageLoader(),
-  createJavaScriptLanguageLoader(),
-  createRustLanguageLoader(),
-  createGoLanguageLoader()
+  pythonLanguageLoader,
+  typescriptLanguageLoader,
+  javascriptLanguageLoader,
+  rustLanguageLoader,
+  goLanguageLoader
 ] as const;
 
 export const languageLoaderFactories = [

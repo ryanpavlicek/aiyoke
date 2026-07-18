@@ -1,7 +1,1 @@
-export {
-  createNestJsFrameworkLoader,
-  nestJsFrameworkLoader,
-  nestjs,
-  nestjsLoader,
-  nestjsLoader as loader
-} from "./node.js";
+export { createNestJsFrameworkLoader, nestJsFrameworkLoader, nestjs } from "./node.js";

@@ -63,6 +63,11 @@ func assertSuccessBody(t *testing.T, response *http.Response) {
 	if !ok || data["answer"] != float64(42) {
 		t.Fatalf("unexpected response body: %#v", body)
 	}
+	usage, ok := body["usage"].(map[string]any)
+	if !ok || usage["inputTokens"] != float64(4) || usage["outputTokens"] != float64(2) ||
+		usage["estimatedCostUsd"] != 0.001 || len(usage) != 3 {
+		t.Fatalf("wire usage is not canonical: %#v", body)
+	}
 }
 
 func TestChiRequestLifecycle(t *testing.T) {

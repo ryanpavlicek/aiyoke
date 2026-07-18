@@ -79,9 +79,9 @@ async def main():
     assert json.loads(response.body) == {
         "data": {"answer": 42},
         "usage": {
-            "input_tokens": 4,
-            "output_tokens": 2,
-            "estimated_cost_usd": 0.001,
+            "inputTokens": 4,
+            "outputTokens": 2,
+            "estimatedCostUsd": 0.001,
         },
     }
 

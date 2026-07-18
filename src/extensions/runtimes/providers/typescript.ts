@@ -288,6 +288,7 @@ export function registerResponsesAdapter(
 `;
 
 const tests = `import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { AdapterRegistry } from "../runtime.js";
 import {
@@ -295,6 +296,20 @@ import {
   registerResponsesAdapter,
   responsesAdapterConfig
 } from "./responses.js";
+
+const conformance = JSON.parse(
+  readFileSync(new URL("../conformance.json", import.meta.url), "utf8")
+) as {
+  readonly providerCases: readonly {
+    readonly statusCode: number;
+    readonly body: unknown;
+    readonly expected: {
+      readonly failureKind: string;
+      readonly providerCode: string;
+      readonly retryable: boolean;
+    };
+  }[];
+};
 
 const request = {
   id: "provider-1",
@@ -305,6 +320,23 @@ const request = {
   maxOutputTokens: 20,
   metadata: {}
 };
+
+test("classifies shared provider failure vectors", async () => {
+  for (const vector of conformance.providerCases) {
+    const adapter = new ResponsesApiAdapter(
+      responsesAdapterConfig("openrouter", "test/model"),
+      () => "secret",
+      async () => new Response(JSON.stringify(vector.body), { status: vector.statusCode })
+    );
+    const result = await adapter.invoke(request, new AbortController().signal);
+    assert.equal(result.kind, "failure");
+    if (result.kind === "failure") {
+      assert.equal(result.failure.kind, vector.expected.failureKind);
+      assert.equal(result.failure.providerCode, vector.expected.providerCode);
+      assert.equal(result.failure.retryable, vector.expected.retryable);
+    }
+  }
+});
 
 test("maps Responses API output, usage, and registration", async () => {
   let authorization = "";

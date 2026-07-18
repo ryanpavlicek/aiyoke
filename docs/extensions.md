@@ -210,6 +210,12 @@ validates artifact paths and structure in both processes. The child re-hashes
 the package immediately before import. Failures return a discriminated rejection
 instead of renderer-controlled error text.
 
+Both discovery and isolation accept an opt-in `diagnostics` sink. Events contain
+only the stable boundary plus sanitized stage/reason identifiers, so operators
+can distinguish a stale digest from an invalid module or artifact response
+without logging untrusted exception messages or secrets. Diagnostic sink errors
+never change the trust decision.
+
 Process isolation limits accidental authority and contains crashes; it is not an
 operating-system sandbox. A renderer may still access resources available to its
 OS user, including absolute filesystem paths and network sockets. Run genuinely

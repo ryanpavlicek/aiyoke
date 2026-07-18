@@ -27,5 +27,4 @@ export function createRustLanguageLoader(): ExtensionLoader<typeof rust> {
   return loaderFor(rust);
 }
 
-export const rustLanguageLoader = createRustLanguageLoader;
-export const loader = createRustLanguageLoader();
+export const rustLanguageLoader = createRustLanguageLoader();

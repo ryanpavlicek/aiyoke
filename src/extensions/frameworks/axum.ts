@@ -1,7 +1,1 @@
-export {
-  axum,
-  axumFrameworkLoader,
-  axumLoader,
-  axumLoader as loader,
-  createAxumFrameworkLoader
-} from "./rust.js";
+export { axum, axumFrameworkLoader, createAxumFrameworkLoader } from "./rust.js";

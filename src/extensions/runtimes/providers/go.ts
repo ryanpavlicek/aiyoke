@@ -196,7 +196,8 @@ func (adapter *ResponsesAPIAdapter) Invoke(ctx context.Context, request ModelReq
 	if err := json.Unmarshal(responseBody, &parsed); err != nil {
 		return providerFailure("The provider returned invalid JSON.", false, "invalid_response", "")
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 || parsed["error"] != nil {
+	status, _ := parsed["status"].(string)
+	if response.StatusCode < 200 || response.StatusCode >= 300 || parsed["error"] != nil || status == "failed" {
 		message := "The provider rejected the request."
 		code := fmt.Sprint(response.StatusCode)
 		if providerError, ok := parsed["error"].(map[string]any); ok {
@@ -221,7 +222,6 @@ func (adapter *ResponsesAPIAdapter) Invoke(ctx context.Context, request ModelReq
 			float64(outputTokens)*adapter.config.OutputCostPerMillionTokens) / 1_000_000
 	}
 	output, _ := parsed["output"].([]any)
-	status, _ := parsed["status"].(string)
 	if status == "" {
 		status = "completed"
 	}
@@ -293,6 +293,31 @@ func providerRequest() ModelRequest {
 	return ModelRequest{
 		ID: "provider-1", Route: "primary", PromptVersion: "v1",
 		Input: map[string]any{"input": "hello"}, InputTokens: 1, MaxOutputTokens: 20,
+	}
+}
+
+func TestResponsesProviderClassifiesSharedFailureVectors(t *testing.T) {
+	for _, vector := range loadConformance(t).ProviderCases {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			writer.WriteHeader(vector.StatusCode)
+			_ = json.NewEncoder(writer).Encode(vector.Body)
+		}))
+		config := ResponsesConfig(ResponsesOpenRouter, "test/model")
+		config.Endpoint = server.URL
+		adapter, err := NewResponsesAPIAdapter(
+			config, func(string) (string, bool) { return "secret", true }, server.Client(),
+		)
+		if err != nil {
+			server.Close()
+			t.Fatal(err)
+		}
+		result := adapter.Invoke(context.Background(), providerRequest())
+		server.Close()
+		failure, ok := result.(ModelFailure)
+		if !ok || string(failure.Kind) != vector.Expected.FailureKind ||
+			failure.ProviderCode != vector.Expected.ProviderCode || failure.Retryable != vector.Expected.Retryable {
+			t.Fatalf("provider vector mismatch: %#v", result)
+		}
 	}
 }
 

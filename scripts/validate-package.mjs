@@ -39,10 +39,6 @@ const forbidden = [
   /(?:^|\/)\.aiyoke(?:\/|$)/
 ];
 
-function command(name) {
-  return process.platform === "win32" ? `${name}.cmd` : name;
-}
-
 async function packageBinary(packageName) {
   const manifestPath = path.join(root, "node_modules", ...packageName.split("/"), "package.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -55,8 +51,18 @@ async function packageBinary(packageName) {
 }
 
 async function runPackageManager(manager, arguments_, options = {}) {
+  const explicitEntry =
+    manager === "npm" ? process.env.AIYOKE_NPM_EXECPATH : process.env.AIYOKE_PNPM_EXECPATH;
   const candidates = [
+    explicitEntry,
     process.env.npm_execpath,
+    path.resolve(
+      path.dirname(process.execPath),
+      "node_modules",
+      manager,
+      "bin",
+      manager === "npm" ? "npm-cli.js" : "pnpm.mjs"
+    ),
     path.resolve(
       path.dirname(process.execPath),
       "..",
@@ -86,10 +92,14 @@ async function runPackageManager(manager, arguments_, options = {}) {
       await access(candidate);
       return run(process.execPath, [candidate, ...arguments_], options);
     } catch {
-      // Try the next package-manager location before falling back to its shim.
+      // Try the next package-manager module location.
     }
   }
-  return run(command(manager), arguments_, options);
+  throw new Error(
+    `Unable to locate ${manager}'s JavaScript entry point. Install ${manager} or set ${
+      manager === "npm" ? "AIYOKE_NPM_EXECPATH" : "AIYOKE_PNPM_EXECPATH"
+    } to its pinned CLI module.`
+  );
 }
 
 function run(executable, arguments_, options = {}) {
@@ -97,7 +107,6 @@ function run(executable, arguments_, options = {}) {
     const child = spawn(executable, arguments_, {
       cwd: options.cwd ?? root,
       env: options.env ?? process.env,
-      shell: process.platform === "win32" && executable.endsWith(".cmd"),
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
       windowsHide: true
     });

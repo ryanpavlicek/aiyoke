@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -236,6 +236,49 @@ describe("CLI initialization", () => {
   ])("returns failure for %s", async (_name, args) => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect(await runCli(args)).toBe(1);
+  });
+
+  it("rejects unknown commands before creating or scanning the root", async () => {
+    const root = join(tmpdir(), `aiyoke-unknown-command-${process.pid}-${Date.now()}`);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await runCli(["unknown-command", "--root", root])).toBe(1);
+    await expect(access(root)).rejects.toThrow();
+  });
+
+  it("prints every positioned configuration issue for human-readable failures", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aiyoke-cli-invalid-config-"));
+    temporaryRoots.push(root);
+    await writeFile(
+      join(root, "aiyoke.yaml"),
+      `schemaVersion: 3
+unknown: true
+project:
+  name: ""
+  architecture: sideways
+composition:
+  kind: single
+  stack:
+    languages: []
+    frameworks: []
+runtime:
+  kind: disabled
+targets: wrong
+packs: wrong
+generation:
+  sourceDirectory: ""
+  lockFile: ""
+  lineEndings: mixed
+`,
+      "utf8"
+    );
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    expect(await runCli(["check", "--root", root])).toBe(1);
+    const output = String(error.mock.calls[0]?.[0]);
+    expect(output).toContain("validation issue");
+    expect(output).toContain("project.name (4:");
+    expect(output).toContain("targets (13:");
+    expect(output.match(/^ {2}- /gmu)?.length).toBeGreaterThanOrEqual(8);
   });
 
   it("rejects an unknown target initialization profile", async () => {

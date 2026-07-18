@@ -2,11 +2,11 @@ import type { ArtifactIntent, TargetSpec, VerificationFinding } from "../../core
 import { compareCodePoints, extensionId } from "../../core/index.js";
 import type {
   ExtensionDescriptor,
-  ExtensionLoader,
-  TargetExtension,
   TargetRenderContext,
   TargetVerificationContext
 } from "../../extension-sdk/index.js";
+
+export { loaderFor } from "./loader.js";
 
 export function descriptor(
   id: string,
@@ -83,11 +83,4 @@ export interface TargetImplementation {
   readonly surface: TargetSpec["kind"];
   render(context: TargetRenderContext): Promise<readonly ArtifactIntent[]>;
   verify(context: TargetVerificationContext): Promise<readonly VerificationFinding[]>;
-}
-
-export function loaderFor(implementation: TargetImplementation): ExtensionLoader<TargetExtension> {
-  return {
-    descriptor: implementation.descriptor,
-    load: async () => implementation
-  };
 }

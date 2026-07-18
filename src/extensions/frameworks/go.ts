@@ -78,9 +78,6 @@ export function createGinFrameworkLoader(): ExtensionLoader<typeof gin> {
 export function createFiberFrameworkLoader(): ExtensionLoader<typeof fiber> {
   return loaderFor(fiber);
 }
-export const chiFrameworkLoader = createChiFrameworkLoader;
-export const ginFrameworkLoader = createGinFrameworkLoader;
-export const fiberFrameworkLoader = createFiberFrameworkLoader;
-export const chiLoader = createChiFrameworkLoader();
-export const ginLoader = createGinFrameworkLoader();
-export const fiberLoader = createFiberFrameworkLoader();
+export const chiFrameworkLoader = createChiFrameworkLoader();
+export const ginFrameworkLoader = createGinFrameworkLoader();
+export const fiberFrameworkLoader = createFiberFrameworkLoader();

@@ -44,9 +44,10 @@ pipeline:
 2. **Resolve** selects extensions, validates versions/dependencies/conflicts,
    and produces a stable module order.
 3. **Plan** computes a deterministic, fingerprinted set of artifact operations.
-4. **Apply** writes only owned artifacts (or marked managed sections), using
-   atomic replacement, a canonical workspace root, safe relative paths, and
-   real-parent identity checks before staging and rename.
+4. **Apply** stages the complete owned-artifact write set, revalidates freshness,
+   and commits a rollback-capable plan transaction using atomic replacement, a
+   canonical workspace root, safe relative paths, and real-parent identity
+   checks before staging and rename.
 5. **Verify** checks generated artifacts and target-specific invariants.
 
 Enabled application-plane runtimes use the same rule. The compiler resolves one

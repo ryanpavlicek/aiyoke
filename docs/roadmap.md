@@ -51,6 +51,20 @@ same verified tag.
 [release]: https://github.com/ryanpavlicek/aiyoke/releases/tag/v0.3.3
 [workflow]: https://github.com/ryanpavlicek/aiyoke/actions/runs/29550589759
 
+## 0.4 — contract and boundary hardening (complete)
+
+- Drive all five generated runtimes from shared conformance vectors and generate
+  JavaScript templates from the TypeScript reference.
+- Close artifact-destination, renderer-snapshot, process-termination, architecture
+  import, frontmatter, and duplicate-module enforcement gaps.
+- Compile resolved runtime policy into native options, implement deterministic
+  CRLF output, and apply complete plans as rollback-capable transactions.
+- Aggregate positioned configuration errors, expose sanitized trust diagnostics,
+  simplify loader conventions, pin property seeds, and make the lazy public engine
+  type directly nameable.
+- Preserve the local-only `AGENTS.md` policy while ensuring every tracked tool
+  guidance file is complete in a fresh clone.
+
 ## 1.0 — stable contracts
 
 - Freeze the schema and extension SDK compatibility policy.
